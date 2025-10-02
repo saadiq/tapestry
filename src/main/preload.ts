@@ -69,4 +69,40 @@ const electronAPI: IElectronAPI = {
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 
+// Expose IPC communication for menu events
+contextBridge.exposeInMainWorld('electron', {
+  on: (channel: string, callback: (...args: any[]) => void) => {
+    const validChannels = [
+      'menu-new-file',
+      'menu-open-folder',
+      'menu-save',
+      'menu-save-as',
+      'menu-toggle-sidebar',
+      'menu-find'
+    ];
+    if (validChannels.includes(channel)) {
+      ipcRenderer.on(channel, (_event, ...args) => callback(...args));
+    }
+  },
+  removeListener: (channel: string, callback: (...args: any[]) => void) => {
+    const validChannels = [
+      'menu-new-file',
+      'menu-open-folder',
+      'menu-save',
+      'menu-save-as',
+      'menu-toggle-sidebar',
+      'menu-find'
+    ];
+    if (validChannels.includes(channel)) {
+      ipcRenderer.removeListener(channel, callback);
+    }
+  },
+  send: (channel: string, ...args: any[]) => {
+    const validChannels: string[] = [];
+    if (validChannels.includes(channel)) {
+      ipcRenderer.send(channel, ...args);
+    }
+  }
+});
+
 console.log('🔌 Preload script loaded');

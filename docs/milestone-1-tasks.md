@@ -146,36 +146,62 @@ After Phase 1 completion, these tracks can be developed concurrently by separate
 
 ---
 
-### Track D: Application Layout & UI Shell
+### Track D: Application Layout & UI Shell ✅ COMPLETE
 
 **Goal:** Create the main application structure and user interface shell
 
 **Tasks:**
-- Design application layout (sidebar + editor area) using Tailwind grid/flex
-- Create MainLayout component with:
-  - Resizable sidebar
-  - Main content area
-  - Title bar (with current file name) using DaisyUI navbar
-  - Status bar using DaisyUI footer with stats (word count, cursor position)
-- Implement theme system (light/dark mode) using DaisyUI themes
-- Add loading states and transitions using DaisyUI loading/skeleton components
-- Implement window controls (custom or native)
-- Create empty states (no file open, no directory selected) using DaisyUI hero/empty state
-- Add basic keyboard shortcuts system (Cmd+N, Cmd+O, Cmd+S, etc.)
-- Implement menu bar with File menu (Open Folder, New File, Save, etc.)
-- Use Lucide icons throughout UI (Menu, Save, FolderOpen, etc.)
+- ✅ Design application layout (sidebar + editor area) using Tailwind grid/flex
+- ✅ Create MainLayout component with:
+  - ✅ Resizable sidebar with drag handle
+  - ✅ Main content area
+  - ✅ Title bar (with current file name) using DaisyUI navbar
+  - ✅ Status bar using DaisyUI footer with stats (word count, cursor position)
+- ✅ Implement theme system (light/dark mode) using DaisyUI themes
+- ✅ Add loading states and transitions using DaisyUI loading/skeleton components
+- ✅ Implement window controls (using native controls)
+- ✅ Create empty states (no file open, no directory selected) using DaisyUI hero/empty state
+- ✅ Add basic keyboard shortcuts system (Cmd+N, Cmd+O, Cmd+S, Cmd+B, Cmd+F)
+- ✅ Implement menu bar with File menu (Open Folder, New File, Save, etc.)
+- ✅ Use Lucide icons throughout UI (Menu, Save, FolderOpen, Sun, Moon, etc.)
 
 **Dependencies:** Phase 1 complete (including UI styling foundation)
 
-**Files to create/modify:**
-- `src/renderer/components/Layout/MainLayout.tsx`
-- `src/renderer/components/Layout/TitleBar.tsx`
-- `src/renderer/components/Layout/StatusBar.tsx`
-- `src/main/menu/applicationMenu.ts`
-- `src/renderer/hooks/useKeyboardShortcuts.ts`
-- `src/renderer/hooks/useTheme.ts`
+**Files created:**
+- ✅ `src/renderer/components/Layout/MainLayout.tsx`
+- ✅ `src/renderer/components/Layout/TitleBar.tsx`
+- ✅ `src/renderer/components/Layout/StatusBar.tsx`
+- ✅ `src/renderer/components/Layout/index.ts`
+- ✅ `src/renderer/components/EmptyStates/NoDirectorySelected.tsx`
+- ✅ `src/renderer/components/EmptyStates/NoFileOpen.tsx`
+- ✅ `src/renderer/components/EmptyStates/LoadingState.tsx`
+- ✅ `src/renderer/components/EmptyStates/index.ts`
+- ✅ `src/main/menu/applicationMenu.ts`
+- ✅ `src/renderer/hooks/useKeyboardShortcuts.ts`
+- ✅ `src/renderer/hooks/useTheme.ts`
+- ✅ `src/renderer/hooks/index.ts`
 
-**Note:** `src/renderer/styles/` files not needed - using Tailwind/DaisyUI in `index.css`
+**Files modified:**
+- ✅ `src/main/main.ts` - Added menu integration
+- ✅ `src/main/preload.ts` - Added IPC event listeners for menu
+- ✅ `src/renderer/App.tsx` - Integrated MainLayout and all UI components
+
+**Features implemented:**
+- Resizable sidebar with smooth drag interaction (200-500px range)
+- Collapsible sidebar via toggle button (Cmd+B)
+- Theme switcher with localStorage persistence and system preference detection
+- Application menu with File, Edit, View, Window, and Help menus
+- Keyboard shortcuts: Cmd+N, Cmd+O, Cmd+S, Cmd+B, Cmd+F
+- Empty states for "no directory" and "no file open" scenarios
+- Loading state component with DaisyUI spinner
+- Status bar with file name, cursor position, and word count placeholders
+- Title bar with file name display and dirty state indicator
+- IPC bridge setup for menu-to-renderer communication
+
+**Ready for integration with:**
+- Track A (TipTap Editor) - Editor will plug into main content area
+- Track B (File System) - Handlers ready for menu and keyboard actions
+- Track C (File Tree) - Sidebar placeholder ready for file tree component
 
 ---
 
