@@ -1,0 +1,275 @@
+/**
+ * FileTree Component
+ * Main tree component with virtual scrolling and search functionality
+ */
+
+import { useMemo, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { Search, X } from 'lucide-react';
+import { FileTreeItem } from './FileTreeItem';
+import { ContextMenu } from './ContextMenu';
+import { useFileTreeContext } from '../../store/fileTreeStore';
+import type {
+  FileNode,
+  ContextMenuState,
+  ContextMenuAction,
+} from '../../../shared/types/fileTree';
+
+interface FlatNode extends FileNode {
+  depth: number;
+}
+
+export function FileTree() {
+  const {
+    nodes,
+    selectedPath,
+    activePath,
+    searchQuery,
+    isLoading,
+    error,
+    toggleExpand,
+    selectFile,
+    openFile,
+    setSearchQuery,
+    refresh,
+  } = useFileTreeContext();
+
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+    isOpen: false,
+    position: { x: 0, y: 0 },
+    targetPath: null,
+    targetType: null,
+  });
+
+  // Flatten tree structure for virtual scrolling
+  const flattenedNodes = useMemo(() => {
+    const flattened: FlatNode[] = [];
+
+    const flatten = (nodes: FileNode[], depth = 0) => {
+      for (const node of nodes) {
+        // Filter by search query
+        if (searchQuery && !node.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+          continue;
+        }
+
+        flattened.push({ ...node, depth });
+
+        // Add children if directory is expanded
+        if (node.type === 'directory' && node.isExpanded && node.children) {
+          flatten(node.children, depth + 1);
+        }
+      }
+    };
+
+    flatten(nodes);
+    return flattened;
+  }, [nodes, searchQuery]);
+
+  // Virtual scrolling setup
+  const parentRef = useMemo(() => ({ current: null as HTMLDivElement | null }), []);
+
+  const virtualizer = useVirtualizer({
+    count: flattenedNodes.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 28, // Estimated height of each row in pixels
+    overscan: 10, // Number of items to render outside of visible area
+  });
+
+  const handleContextMenu = (event: React.MouseEvent, node: FileNode) => {
+    event.preventDefault();
+    setContextMenu({
+      isOpen: true,
+      position: { x: event.clientX, y: event.clientY },
+      targetPath: node.path,
+      targetType: node.type,
+    });
+  };
+
+  const handleContextMenuAction = (action: ContextMenuAction, path: string) => {
+    // Handle context menu actions
+    switch (action) {
+      case 'refresh':
+        refresh();
+        break;
+      case 'new-file':
+        // TODO: Create new file
+        console.log('Create new file in', path);
+        break;
+      case 'new-folder':
+        // TODO: Create new folder
+        console.log('Create new folder in', path);
+        break;
+      case 'rename':
+        // TODO: Rename
+        console.log('Rename', path);
+        break;
+      case 'delete':
+        // TODO: Delete
+        console.log('Delete', path);
+        break;
+      case 'reveal-in-finder':
+        // TODO: Reveal in Finder
+        console.log('Reveal in Finder', path);
+        break;
+    }
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    const currentIndex = flattenedNodes.findIndex((node) => node.path === selectedPath);
+
+    if (currentIndex === -1) return;
+
+    switch (event.key) {
+      case 'ArrowUp':
+        event.preventDefault();
+        if (currentIndex > 0) {
+          selectFile(flattenedNodes[currentIndex - 1].path);
+        }
+        break;
+      case 'ArrowDown':
+        event.preventDefault();
+        if (currentIndex < flattenedNodes.length - 1) {
+          selectFile(flattenedNodes[currentIndex + 1].path);
+        }
+        break;
+      case 'ArrowRight':
+        event.preventDefault();
+        {
+          const currentNode = flattenedNodes[currentIndex];
+          if (currentNode.type === 'directory' && !currentNode.isExpanded) {
+            toggleExpand(currentNode.path);
+          }
+        }
+        break;
+      case 'ArrowLeft':
+        event.preventDefault();
+        {
+          const currentNode = flattenedNodes[currentIndex];
+          if (currentNode.type === 'directory' && currentNode.isExpanded) {
+            toggleExpand(currentNode.path);
+          }
+        }
+        break;
+      case 'Enter':
+        event.preventDefault();
+        {
+          const currentNode = flattenedNodes[currentIndex];
+          if (currentNode.type === 'file') {
+            openFile(currentNode.path);
+          } else {
+            toggleExpand(currentNode.path);
+          }
+        }
+        break;
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-base-100">
+      {/* Search Bar */}
+      <div className="p-2 border-b border-base-300">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-base-content/50" />
+          <input
+            type="text"
+            placeholder="Search files..."
+            className="input input-sm input-bordered w-full pl-9 pr-8"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button
+              className="absolute right-2 top-1/2 transform -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
+              onClick={() => setSearchQuery('')}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Loading State */}
+      {isLoading && (
+        <div className="flex items-center justify-center p-4">
+          <span className="loading loading-spinner loading-md"></span>
+        </div>
+      )}
+
+      {/* Error State */}
+      {error && (
+        <div className="alert alert-error m-2">
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!isLoading && !error && flattenedNodes.length === 0 && (
+        <div className="flex flex-col items-center justify-center p-8 text-center">
+          <p className="text-base-content/60">
+            {searchQuery ? 'No files found' : 'No files to display'}
+          </p>
+        </div>
+      )}
+
+      {/* File Tree with Virtual Scrolling */}
+      {!isLoading && !error && flattenedNodes.length > 0 && (
+        <div
+          ref={parentRef as any}
+          className="flex-1 overflow-auto"
+          onKeyDown={handleKeyDown}
+          tabIndex={0}
+        >
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualItem) => {
+              const node = flattenedNodes[virtualItem.index];
+              return (
+                <div
+                  key={node.id}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: `${virtualItem.size}px`,
+                    transform: `translateY(${virtualItem.start}px)`,
+                  }}
+                >
+                  <FileTreeItem
+                    node={node}
+                    depth={node.depth}
+                    onToggle={toggleExpand}
+                    onSelect={selectFile}
+                    onOpen={openFile}
+                    onContextMenu={handleContextMenu}
+                    isSelected={node.path === selectedPath}
+                    isActive={node.path === activePath}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Context Menu */}
+      <ContextMenu
+        menuState={contextMenu}
+        onClose={() =>
+          setContextMenu({
+            isOpen: false,
+            position: { x: 0, y: 0 },
+            targetPath: null,
+            targetType: null,
+          })
+        }
+        onAction={handleContextMenuAction}
+      />
+    </div>
+  );
+}

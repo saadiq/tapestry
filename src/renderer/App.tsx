@@ -1,61 +1,31 @@
 import './index.css';
-import { FileText, Folder, Settings, Sparkles } from 'lucide-react';
+import { Sidebar } from './components/Sidebar/Sidebar';
+import { FileTreeProvider } from './store/fileTreeStore';
 
 function App() {
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-6 bg-base-200">
-      <div className="card w-96 bg-base-100 shadow-xl">
-        <div className="card-body items-center text-center">
-          <Sparkles className="h-12 w-12 text-primary" />
-          <h2 className="card-title text-2xl">Welcome to Tapestry</h2>
-          <p>Your AI-powered document workspace</p>
+    <FileTreeProvider>
+      <div className="flex h-full w-full bg-base-100">
+        {/* Sidebar with File Tree */}
+        <Sidebar />
 
-          <div className="divider"></div>
-
-          <div className="flex w-full flex-col gap-2">
-            <button className="btn btn-primary">
-              <Folder className="h-4 w-4" />
-              Open Folder
-            </button>
-            <button className="btn btn-outline">
-              <FileText className="h-4 w-4" />
-              New Document
-            </button>
-          </div>
-
-          <div className="mt-4 flex gap-2">
-            <div className="badge badge-success">Phase 1 Complete</div>
-            <div className="badge badge-info">Tailwind + DaisyUI</div>
+        {/* Main Content Area - Placeholder for Editor (Track A) */}
+        <div className="flex-1 flex items-center justify-center bg-base-200">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-base-content/60 mb-2">
+              Track C: File Tree Complete
+            </h2>
+            <p className="text-base-content/40">
+              Editor component will be integrated here by Track A
+            </p>
+            <div className="mt-4 flex gap-2 justify-center">
+              <div className="badge badge-success">Track C Complete</div>
+              <div className="badge badge-info">File Tree Navigation</div>
+            </div>
           </div>
         </div>
       </div>
-
-      <div className="flex gap-2">
-        <div className="stat bg-base-100 shadow">
-          <div className="stat-figure text-primary">
-            <FileText className="h-8 w-8" />
-          </div>
-          <div className="stat-title">Editor</div>
-          <div className="stat-value text-sm">TipTap Ready</div>
-        </div>
-
-        <div className="stat bg-base-100 shadow">
-          <div className="stat-figure text-secondary">
-            <Folder className="h-8 w-8" />
-          </div>
-          <div className="stat-title">File System</div>
-          <div className="stat-value text-sm">Ready</div>
-        </div>
-
-        <div className="stat bg-base-100 shadow">
-          <div className="stat-figure text-accent">
-            <Settings className="h-8 w-8" />
-          </div>
-          <div className="stat-title">UI</div>
-          <div className="stat-value text-sm">Styled</div>
-        </div>
-      </div>
-    </div>
+    </FileTreeProvider>
   );
 }
 
