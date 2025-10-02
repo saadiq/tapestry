@@ -27,6 +27,19 @@ These tasks must be completed first and form the foundation for parallel work:
 - Implement IPC bridge setup (preload script)
 - Verify app builds and runs with "Hello World"
 
+### 1.4 UI Styling Foundation ✅ COMPLETE
+- Install Tailwind CSS v4, DaisyUI, and Lucide React icons
+- Configure Tailwind CSS v4 with DaisyUI plugin in CSS
+- Update Vite config for PostCSS/CSS preprocessing
+- Create demo UI with DaisyUI components and Lucide icons
+- Verify styled components render correctly
+
+**Completed Stack:**
+- Tailwind CSS v4.0.0 (utility-first styling)
+- DaisyUI v5.1.26 (component library)
+- Lucide React v0.544.0 (iconography)
+- PostCSS v8.5.6 + Autoprefixer v10.4.21
+
 ---
 
 ## Phase 2: Parallel Development Tracks
@@ -43,7 +56,7 @@ After Phase 1 completion, these tracks can be developed concurrently by separate
 - Implement live formatting preview (WYSIWYG mode)
 - Add markdown syntax auto-formatting (e.g., `**bold**` → **bold**)
 - Build formatting toolbar/context menu with:
-  - Bold, italic, strikethrough
+  - Bold, italic, strikethrough (use DaisyUI buttons + Lucide icons)
   - Headings (H1-H6)
   - Lists (ordered, unordered)
   - Links and images
@@ -52,8 +65,9 @@ After Phase 1 completion, these tracks can be developed concurrently by separate
 - Add keyboard shortcuts for common formatting operations
 - Implement proper focus management and cursor positioning
 - Add editor state management (content, selection)
+- Style editor with Tailwind utilities for responsive layout
 
-**Dependencies:** Phase 1 complete
+**Dependencies:** Phase 1 complete (including UI styling foundation)
 
 **Files to create/modify:**
 - `src/renderer/components/Editor/EditorComponent.tsx`
@@ -109,18 +123,18 @@ After Phase 1 completion, these tracks can be developed concurrently by separate
 - Create FileTree component with:
   - Hierarchical folder/file display
   - Expand/collapse folders
-  - File icons (markdown, folder icons)
-  - Active file highlighting
+  - File icons using Lucide (File, Folder, FolderOpen, FileText, etc.)
+  - Active file highlighting with DaisyUI active states
   - Click to open file
-  - Right-click context menu (create, delete, rename)
+  - Right-click context menu (create, delete, rename) using DaisyUI dropdown/modal
 - Implement virtual scrolling for large directories
-- Add search/filter functionality for file tree
-- Create Sidebar component wrapping FileTree
+- Add search/filter functionality for file tree with DaisyUI input
+- Create Sidebar component wrapping FileTree with Tailwind layout utilities
 - Implement sidebar resize/collapse functionality
 - Add keyboard navigation (arrow keys, enter to open)
 - Handle file tree updates on external changes (via file watcher)
 
-**Dependencies:** Phase 1 complete
+**Dependencies:** Phase 1 complete (including UI styling foundation)
 
 **Files to create/modify:**
 - `src/renderer/components/Sidebar/Sidebar.tsx`
@@ -137,30 +151,31 @@ After Phase 1 completion, these tracks can be developed concurrently by separate
 **Goal:** Create the main application structure and user interface shell
 
 **Tasks:**
-- Design application layout (sidebar + editor area)
+- Design application layout (sidebar + editor area) using Tailwind grid/flex
 - Create MainLayout component with:
   - Resizable sidebar
   - Main content area
-  - Title bar (with current file name)
-  - Status bar (optional: word count, cursor position)
-- Implement theme system (light/dark mode foundation)
-- Create basic CSS/styling architecture (CSS modules or styled-components)
-- Add loading states and transitions
+  - Title bar (with current file name) using DaisyUI navbar
+  - Status bar using DaisyUI footer with stats (word count, cursor position)
+- Implement theme system (light/dark mode) using DaisyUI themes
+- Add loading states and transitions using DaisyUI loading/skeleton components
 - Implement window controls (custom or native)
-- Create empty states (no file open, no directory selected)
+- Create empty states (no file open, no directory selected) using DaisyUI hero/empty state
 - Add basic keyboard shortcuts system (Cmd+N, Cmd+O, Cmd+S, etc.)
 - Implement menu bar with File menu (Open Folder, New File, Save, etc.)
+- Use Lucide icons throughout UI (Menu, Save, FolderOpen, etc.)
 
-**Dependencies:** Phase 1 complete
+**Dependencies:** Phase 1 complete (including UI styling foundation)
 
 **Files to create/modify:**
 - `src/renderer/components/Layout/MainLayout.tsx`
 - `src/renderer/components/Layout/TitleBar.tsx`
 - `src/renderer/components/Layout/StatusBar.tsx`
-- `src/renderer/styles/theme.ts`
-- `src/renderer/styles/global.css`
 - `src/main/menu/applicationMenu.ts`
 - `src/renderer/hooks/useKeyboardShortcuts.ts`
+- `src/renderer/hooks/useTheme.ts`
+
+**Note:** `src/renderer/styles/` files not needed - using Tailwind/DaisyUI in `index.css`
 
 ---
 
@@ -231,3 +246,9 @@ After all parallel tracks complete:
 - All agents start after Phase 1 completes
 - Agents coordinate on shared type definitions
 - Integration happens after all tracks complete
+
+**Shared UI Resources (Available to All Tracks):**
+- **Tailwind CSS v4:** Utility classes for layout, spacing, colors, typography
+- **DaisyUI v5.1.26:** Pre-built components (buttons, cards, modals, inputs, navbar, etc.)
+- **Lucide React v0.544.0:** Consistent icon set across the application
+- **Theme System:** DaisyUI themes support light/dark mode out of the box
