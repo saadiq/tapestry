@@ -1,64 +1,70 @@
 import './index.css';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { MainLayout } from './components/Layout/MainLayout';
 import { Sidebar } from './components/Sidebar/Sidebar';
-import { FileTreeProvider } from './store/fileTreeStore';
+import { FileTreeProvider, useFileTreeContext } from './store/fileTreeStore';
 import { EditorComponent } from './components/Editor/EditorComponent';
 import { NoDirectorySelected } from './components/EmptyStates/NoDirectorySelected';
 import { NoFileOpen } from './components/EmptyStates/NoFileOpen';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useFileContent } from './hooks/useFileContent';
+import { fileSystemService } from './services/fileSystemService';
 
-function App() {
+// Inner component that has access to FileTreeContext
+function AppContent() {
   const { theme, toggleTheme } = useTheme();
-  const [content, setContent] = useState('<h1>Welcome to Tapestry</h1><p>Start editing your document...</p>');
-  const [isDirty, setIsDirty] = useState(false);
-  const [currentFile, setCurrentFile] = useState<string | null>(null);
-  const [currentDirectory, setCurrentDirectory] = useState<string | null>(null);
+  const { loadDirectory, activePath, rootPath } = useFileTreeContext();
+  const fileContent = useFileContent({ enableAutoSave: true, autoSaveDelay: 1000 }); // Auto-save after 1 second
   const [wordCount, setWordCount] = useState(0);
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
 
-  const handleUpdate = (newContent: string) => {
-    setContent(newContent);
-    setIsDirty(true);
-    // Calculate word count from HTML content
-    const text = newContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    const words = text.length > 0 ? text.split(' ').length : 0;
-    setWordCount(words);
-  };
-
-  const handleSave = async () => {
-    if (!isDirty || !currentFile) return;
-    console.log('Save clicked:', currentFile);
-    // TODO: Implement actual save with file system (Track B)
-    setIsDirty(false);
-  };
-
-  const handleOpenFolder = async () => {
-    console.log('Open folder clicked');
-    // TODO: Wire up with file system API (Track B)
-    if (window.electronAPI?.fileSystem?.openDirectory) {
-      const result = await window.electronAPI.fileSystem.openDirectory();
-      if (result.success && result.directoryPath) {
-        setCurrentDirectory(result.directoryPath);
-      }
+  // Load file when activePath changes
+  useEffect(() => {
+    if (activePath) {
+      fileContent.loadFile(activePath);
     }
-  };
+  }, [activePath]);
 
-  const handleNewFile = () => {
-    console.log('New file clicked');
-    // TODO: Implement with file system integration (Track B)
-  };
+  // Update word count when content changes
+  useEffect(() => {
+    if (fileContent.content) {
+      const text = fileContent.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      const words = text.length > 0 ? text.split(' ').length : 0;
+      setWordCount(words);
+    }
+  }, [fileContent.content]);
 
-  const handleToggleSidebar = () => {
-    console.log('Toggle sidebar clicked');
+  const handleUpdate = useCallback((newContent: string) => {
+    fileContent.updateContent(newContent);
+  }, [fileContent]);
+
+  const handleSave = useCallback(async () => {
+    await fileContent.saveFile();
+  }, [fileContent]);
+
+  const handleOpenFolder = useCallback(async () => {
+    const result = await fileSystemService.openDirectory();
+    if (result.success && result.path) {
+      await loadDirectory(result.path);
+      // Watch directory for changes
+      await fileSystemService.watchDirectory(result.path);
+    }
+  }, [loadDirectory]);
+
+  const handleNewFile = useCallback(() => {
+    // New file is handled via file tree context menu
+    console.log('New file: Use context menu in file tree');
+  }, []);
+
+  const handleToggleSidebar = useCallback(() => {
     // Sidebar toggle is handled by MainLayout
-  };
+  }, []);
 
-  const handleFind = () => {
-    console.log('Find clicked');
+  const handleFind = useCallback(() => {
     // TODO: Implement find functionality
-  };
+    console.log('Find clicked');
+  }, []);
 
   // Set up keyboard shortcuts
   useKeyboardShortcuts({
@@ -69,12 +75,49 @@ function App() {
     onFind: handleFind
   });
 
+  // Warn before closing with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (fileContent.isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [fileContent.isDirty]);
+
+  // Listen for file system changes
+  useEffect(() => {
+    if (!rootPath) return;
+
+    const handleFileChange = async () => {
+      // Reload directory tree when files change
+      await loadDirectory(rootPath);
+    };
+
+    // Set up file watcher listener
+    if (window.electronAPI?.fileSystem?.onFileChange) {
+      window.electronAPI.fileSystem.onFileChange(handleFileChange);
+    }
+
+    return () => {
+      // Clean up listener
+      if (window.electronAPI?.fileSystem?.removeFileChangeListener) {
+        window.electronAPI.fileSystem.removeFileChangeListener(handleFileChange);
+      }
+    };
+  }, [rootPath, loadDirectory]);
+
   // Listen for menu events from main process
   useEffect(() => {
     const handleMenuNewFile = () => handleNewFile();
-    const handleMenuOpenFolder = (path: string) => {
-      console.log('Menu open folder:', path);
-      setCurrentDirectory(path);
+    const handleMenuOpenFolder = async () => {
+      await handleOpenFolder();
     };
     const handleMenuSave = () => handleSave();
     const handleMenuToggleSidebar = () => handleToggleSidebar();
@@ -99,35 +142,52 @@ function App() {
         window.electron.removeListener('menu-find', handleMenuFind);
       }
     };
-  }, []);
+  }, [handleNewFile, handleOpenFolder, handleSave, handleToggleSidebar, handleFind]);
 
   return (
+    <MainLayout
+      theme={theme}
+      onToggleTheme={toggleTheme}
+      currentFile={fileContent.filePath || undefined}
+      isDirty={fileContent.isDirty}
+      wordCount={wordCount}
+      cursorPosition={cursorPosition}
+      onSave={handleSave}
+      onOpenFolder={handleOpenFolder}
+      onNewFile={handleNewFile}
+      sidebar={rootPath ? <Sidebar /> : undefined}
+    >
+      {!rootPath ? (
+        <NoDirectorySelected onOpenFolder={handleOpenFolder} />
+      ) : !activePath ? (
+        <NoFileOpen hasDirectory={!!rootPath} onNewFile={handleNewFile} />
+      ) : fileContent.loading ? (
+        <div className="flex items-center justify-center h-full">
+          <span className="loading loading-spinner loading-lg"></span>
+        </div>
+      ) : fileContent.error ? (
+        <div className="flex items-center justify-center h-full">
+          <div className="alert alert-error max-w-md">
+            <span>{fileContent.error}</span>
+          </div>
+        </div>
+      ) : (
+        <EditorComponent
+          content={fileContent.content}
+          onUpdate={handleUpdate}
+          placeholder="Start typing your document..."
+          editable={true}
+        />
+      )}
+    </MainLayout>
+  );
+}
+
+// Main App component with FileTreeProvider wrapper
+function App() {
+  return (
     <FileTreeProvider>
-      <MainLayout
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        currentFile={currentFile || undefined}
-        isDirty={isDirty}
-        wordCount={wordCount}
-        cursorPosition={cursorPosition}
-        onSave={handleSave}
-        onOpenFolder={handleOpenFolder}
-        onNewFile={handleNewFile}
-        sidebar={currentDirectory ? <Sidebar /> : undefined}
-      >
-        {!currentDirectory ? (
-          <NoDirectorySelected onOpenFolder={handleOpenFolder} />
-        ) : !currentFile ? (
-          <NoFileOpen hasDirectory={!!currentDirectory} onNewFile={handleNewFile} />
-        ) : (
-          <EditorComponent
-            content={content}
-            onUpdate={handleUpdate}
-            placeholder="Start typing your document..."
-            editable={true}
-          />
-        )}
-      </MainLayout>
+      <AppContent />
     </FileTreeProvider>
   );
 }

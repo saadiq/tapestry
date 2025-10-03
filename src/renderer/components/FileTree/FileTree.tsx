@@ -8,6 +8,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Search, X } from 'lucide-react';
 import { FileTreeItem } from './FileTreeItem';
 import { ContextMenu } from './ContextMenu';
+import { InputModal, ConfirmDialog } from '../Modals';
 import { useFileTreeContext } from '../../store/fileTreeStore';
 import type {
   FileNode,
@@ -32,6 +33,10 @@ export function FileTree() {
     openFile,
     setSearchQuery,
     refresh,
+    createFile,
+    createDirectory,
+    rename,
+    delete: deleteNode,
   } = useFileTreeContext();
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -39,6 +44,28 @@ export function FileTree() {
     position: { x: 0, y: 0 },
     targetPath: null,
     targetType: null,
+  });
+
+  const [newFileModal, setNewFileModal] = useState<{ isOpen: boolean; parentPath: string }>({
+    isOpen: false,
+    parentPath: '',
+  });
+
+  const [newFolderModal, setNewFolderModal] = useState<{ isOpen: boolean; parentPath: string }>({
+    isOpen: false,
+    parentPath: '',
+  });
+
+  const [renameModal, setRenameModal] = useState<{ isOpen: boolean; path: string; currentName: string }>({
+    isOpen: false,
+    path: '',
+    currentName: '',
+  });
+
+  const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; path: string; name: string }>({
+    isOpen: false,
+    path: '',
+    name: '',
   });
 
   // Flatten tree structure for virtual scrolling
@@ -86,32 +113,62 @@ export function FileTree() {
   };
 
   const handleContextMenuAction = (action: ContextMenuAction, path: string) => {
+    // Close context menu
+    setContextMenu({
+      isOpen: false,
+      position: { x: 0, y: 0 },
+      targetPath: null,
+      targetType: null,
+    });
+
     // Handle context menu actions
     switch (action) {
       case 'refresh':
         refresh();
         break;
       case 'new-file':
-        // TODO: Create new file
-        console.log('Create new file in', path);
+        setNewFileModal({ isOpen: true, parentPath: path });
         break;
       case 'new-folder':
-        // TODO: Create new folder
-        console.log('Create new folder in', path);
+        setNewFolderModal({ isOpen: true, parentPath: path });
         break;
-      case 'rename':
-        // TODO: Rename
-        console.log('Rename', path);
+      case 'rename': {
+        const pathParts = path.split('/');
+        const currentName = pathParts[pathParts.length - 1];
+        setRenameModal({ isOpen: true, path, currentName });
         break;
-      case 'delete':
-        // TODO: Delete
-        console.log('Delete', path);
+      }
+      case 'delete': {
+        const pathParts = path.split('/');
+        const name = pathParts[pathParts.length - 1];
+        setDeleteDialog({ isOpen: true, path, name });
         break;
+      }
       case 'reveal-in-finder':
-        // TODO: Reveal in Finder
+        // TODO: Implement reveal in Finder (requires shell command)
         console.log('Reveal in Finder', path);
         break;
     }
+  };
+
+  const handleNewFile = async (fileName: string) => {
+    await createFile(newFileModal.parentPath, fileName);
+    setNewFileModal({ isOpen: false, parentPath: '' });
+  };
+
+  const handleNewFolder = async (folderName: string) => {
+    await createDirectory(newFolderModal.parentPath, folderName);
+    setNewFolderModal({ isOpen: false, parentPath: '' });
+  };
+
+  const handleRename = async (newName: string) => {
+    await rename(renameModal.path, newName);
+    setRenameModal({ isOpen: false, path: '', currentName: '' });
+  };
+
+  const handleDelete = async () => {
+    await deleteNode(deleteDialog.path);
+    setDeleteDialog({ isOpen: false, path: '', name: '' });
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -269,6 +326,51 @@ export function FileTree() {
           })
         }
         onAction={handleContextMenuAction}
+      />
+
+      {/* New File Modal */}
+      <InputModal
+        isOpen={newFileModal.isOpen}
+        title="New File"
+        message="Enter a name for the new file:"
+        placeholder="filename.md"
+        confirmText="Create"
+        onConfirm={handleNewFile}
+        onCancel={() => setNewFileModal({ isOpen: false, parentPath: '' })}
+      />
+
+      {/* New Folder Modal */}
+      <InputModal
+        isOpen={newFolderModal.isOpen}
+        title="New Folder"
+        message="Enter a name for the new folder:"
+        placeholder="folder-name"
+        confirmText="Create"
+        onConfirm={handleNewFolder}
+        onCancel={() => setNewFolderModal({ isOpen: false, parentPath: '' })}
+      />
+
+      {/* Rename Modal */}
+      <InputModal
+        isOpen={renameModal.isOpen}
+        title="Rename"
+        message="Enter a new name:"
+        placeholder="new-name"
+        defaultValue={renameModal.currentName}
+        confirmText="Rename"
+        onConfirm={handleRename}
+        onCancel={() => setRenameModal({ isOpen: false, path: '', currentName: '' })}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={deleteDialog.isOpen}
+        title="Delete File"
+        message={`Are you sure you want to delete "${deleteDialog.name}"? This action cannot be undone.`}
+        confirmText="Delete"
+        confirmButtonClass="btn-error"
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteDialog({ isOpen: false, path: '', name: '' })}
       />
     </div>
   );

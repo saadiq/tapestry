@@ -56,9 +56,9 @@ export function Sidebar() {
   };
 
   const handleOpenFolder = async () => {
-    // TODO: This will trigger IPC call to open folder dialog (Track B)
-    // For now, load mock data
-    await loadDirectory('/example');
+    // This is now handled by App.tsx which has access to fileSystemService
+    // Keeping this here for the button in empty state
+    console.log('Open folder button - this should trigger from App level');
   };
 
   return (

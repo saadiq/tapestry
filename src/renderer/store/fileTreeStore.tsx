@@ -4,6 +4,8 @@
  */
 
 import { createContext, useContext, ReactNode, useState, useCallback } from 'react';
+import { fileSystemService } from '../services/fileSystemService';
+import type { DirectoryEntry } from '../../shared/types/fileSystem';
 import type {
   FileNode,
   FileTreeState,
@@ -38,42 +40,41 @@ export function FileTreeProvider({ children }: FileTreeProviderProps) {
     error: null,
   });
 
+  // Transform DirectoryEntry to FileNode
+  const transformDirectoryEntriesToFileNodes = useCallback(
+    (entries: DirectoryEntry[], basePath: string = ''): FileNode[] => {
+      return entries.map((entry) => {
+        const node: FileNode = {
+          id: entry.path,
+          name: entry.name,
+          path: entry.path,
+          type: entry.isDirectory ? 'directory' : 'file',
+          extension: entry.extension,
+          isExpanded: false,
+        };
+
+        if (entry.children && entry.children.length > 0) {
+          node.children = transformDirectoryEntriesToFileNodes(entry.children, entry.path);
+        }
+
+        return node;
+      });
+    },
+    []
+  );
+
   // Load directory structure
   const loadDirectory = useCallback(async (path: string) => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
-      // TODO: This will be replaced with actual IPC call to main process (Track B)
-      // For now, create mock data structure
-      const mockNodes: FileNode[] = [
-        {
-          id: '1',
-          name: 'docs',
-          path: '/example/docs',
-          type: 'directory',
-          isExpanded: false,
-          children: [
-            {
-              id: '1-1',
-              name: 'README.md',
-              path: '/example/docs/README.md',
-              type: 'file',
-              extension: 'md',
-            },
-          ],
-        },
-        {
-          id: '2',
-          name: 'notes.md',
-          path: '/example/notes.md',
-          type: 'file',
-          extension: 'md',
-        },
-      ];
+      // Call real IPC to load directory contents recursively
+      const entries = await fileSystemService.readDirectory(path, true);
+      const nodes = transformDirectoryEntriesToFileNodes(entries, path);
 
       setState((prev) => ({
         ...prev,
         rootPath: path,
-        nodes: mockNodes,
+        nodes,
         isLoading: false,
       }));
     } catch (error) {
@@ -83,7 +84,7 @@ export function FileTreeProvider({ children }: FileTreeProviderProps) {
         error: error instanceof Error ? error.message : 'Failed to load directory',
       }));
     }
-  }, []);
+  }, [transformDirectoryEntriesToFileNodes]);
 
   // Toggle directory expansion
   const toggleExpand = useCallback((path: string) => {
@@ -143,27 +144,107 @@ export function FileTreeProvider({ children }: FileTreeProviderProps) {
 
   // Create a new file
   const createFile = useCallback(async (parentPath: string, fileName: string) => {
-    // TODO: Will be implemented with IPC call (Track B)
-    console.log('Create file:', { parentPath, fileName });
-  }, []);
+    try {
+      // Ensure .md extension
+      const normalizedFileName = fileName.endsWith('.md') ? fileName : `${fileName}.md`;
+      const filePath = `${parentPath}/${normalizedFileName}`;
+
+      const result = await fileSystemService.createFile(filePath, '');
+
+      if (result.success) {
+        // Refresh directory tree to show new file
+        if (state.rootPath) {
+          await loadDirectory(state.rootPath);
+        }
+        return true;
+      } else {
+        throw new Error(result.error || 'Failed to create file');
+      }
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        error: error instanceof Error ? error.message : 'Failed to create file',
+      }));
+      return false;
+    }
+  }, [state.rootPath, loadDirectory]);
 
   // Create a new directory
   const createDirectory = useCallback(async (parentPath: string, dirName: string) => {
-    // TODO: Will be implemented with IPC call (Track B)
-    console.log('Create directory:', { parentPath, dirName });
-  }, []);
+    try {
+      // Create directory by creating a .gitkeep file inside it
+      const dirPath = `${parentPath}/${dirName}`;
+      const gitkeepPath = `${dirPath}/.gitkeep.md`;
+
+      const result = await fileSystemService.createFile(gitkeepPath, '');
+
+      if (result.success) {
+        // Refresh directory tree to show new directory
+        if (state.rootPath) {
+          await loadDirectory(state.rootPath);
+        }
+        return true;
+      } else {
+        throw new Error(result.error || 'Failed to create directory');
+      }
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        error: error instanceof Error ? error.message : 'Failed to create directory',
+      }));
+      return false;
+    }
+  }, [state.rootPath, loadDirectory]);
 
   // Rename a file or directory
   const rename = useCallback(async (oldPath: string, newName: string) => {
-    // TODO: Will be implemented with IPC call (Track B)
-    console.log('Rename:', { oldPath, newName });
-  }, []);
+    try {
+      const pathParts = oldPath.split('/');
+      pathParts[pathParts.length - 1] = newName;
+      const newPath = pathParts.join('/');
+
+      const result = await fileSystemService.renameFile(oldPath, newPath);
+
+      if (result.success) {
+        // Refresh directory tree to show renamed file
+        if (state.rootPath) {
+          await loadDirectory(state.rootPath);
+        }
+        return true;
+      } else {
+        throw new Error(result.error || 'Failed to rename');
+      }
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        error: error instanceof Error ? error.message : 'Failed to rename',
+      }));
+      return false;
+    }
+  }, [state.rootPath, loadDirectory]);
 
   // Delete a file or directory
   const deleteNode = useCallback(async (path: string) => {
-    // TODO: Will be implemented with IPC call (Track B)
-    console.log('Delete:', { path });
-  }, []);
+    try {
+      const result = await fileSystemService.deleteFile(path);
+
+      if (result.success) {
+        // Refresh directory tree to remove deleted file
+        if (state.rootPath) {
+          await loadDirectory(state.rootPath);
+        }
+        return true;
+      } else {
+        throw new Error(result.error || 'Failed to delete');
+      }
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        error: error instanceof Error ? error.message : 'Failed to delete',
+      }));
+      return false;
+    }
+  }, [state.rootPath, loadDirectory]);
 
   // Refresh the tree
   const refresh = useCallback(async () => {
