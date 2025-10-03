@@ -209,29 +209,44 @@ After Phase 1 completion, these tracks can be developed concurrently by separate
 
 After all parallel tracks complete:
 
-### 3.1 Component Integration
-- Integrate all tracks into MainLayout
-- Connect file tree selection to editor
-- Wire up file operations to UI actions
-- Ensure IPC communication flows correctly
+### 3.1 Component Integration ✅ COMPLETE
+- ✅ Integrate all tracks into MainLayout
+- ✅ Connect file tree selection to editor
+- ✅ Wire up file operations to UI actions
+- ✅ Ensure IPC communication flows correctly
+- ✅ Add input modals for file/folder creation and rename
+- ✅ Add confirmation dialogs for delete operations
+- ✅ Implement auto-save with configurable delay (1s)
+- ✅ Add file watcher integration for automatic refresh
+- ✅ Add unsaved changes warning on window close
 
-### 3.2 State Management Integration
-- Implement global state management (Context API or Zustand)
-- Manage application state (current file, directory, editor state)
-- Implement undo/redo for file operations
+**Commits:**
+- `40d2299` - feat: integrate file tree with file system and editor (Phase 3.1)
 
-### 3.3 Testing & Bug Fixes
-- Test file operations across different scenarios
-- Test editor functionality with various markdown content
-- Test file tree with large directories
-- Fix cross-platform issues (macOS, Windows, Linux)
+### 3.2 State Management Integration ⏭️ SKIPPED
+- ✅ Implement global state management (Context API) - Using React Context for file tree, toasts
+- ⏭️ Zustand not needed at current complexity level
+- ⏭️ Undo/redo for file operations (future enhancement)
 
-### 3.4 User Experience Polish
-- Add loading indicators
-- Improve error messages
-- Add confirmation dialogs for destructive actions
-- Optimize performance (large files, many files)
-- Add welcome screen for first-time users
+### 3.3 Testing & Bug Fixes ⏳ PENDING
+- ⏳ Test file operations across different scenarios
+- ⏳ Test editor functionality with various markdown content
+- ⏳ Test file tree with large directories
+- ⏳ Fix cross-platform issues (macOS, Windows, Linux)
+- ⏳ Install Vitest + React Testing Library
+- ⏳ Write smoke tests
+
+### 3.4 User Experience Polish ✅ MOSTLY COMPLETE
+- ✅ Add loading indicators
+- ✅ Improve error messages (toast notifications)
+- ✅ Add confirmation dialogs for destructive actions
+- ✅ Add toast notification system for user feedback
+- ⏳ Optimize performance (large files, many files) - needs testing
+- ⏳ Add welcome screen for first-time users (optional)
+- ⏳ Implement find functionality (Cmd+F defined but not implemented)
+
+**Commits:**
+- `d78c76c` - feat: add toast notification system for user feedback
 
 ---
 
