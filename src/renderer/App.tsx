@@ -6,16 +6,18 @@ import { FileTreeProvider, useFileTreeContext } from './store/fileTreeStore';
 import { EditorComponent } from './components/Editor/EditorComponent';
 import { NoDirectorySelected } from './components/EmptyStates/NoDirectorySelected';
 import { NoFileOpen } from './components/EmptyStates/NoFileOpen';
+import { ToastProvider, useToast } from './components/Notifications';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useFileContent } from './hooks/useFileContent';
 import { fileSystemService } from './services/fileSystemService';
 
-// Inner component that has access to FileTreeContext
+// Inner component that has access to FileTreeContext and Toast
 function AppContent() {
   const { theme, toggleTheme } = useTheme();
   const { loadDirectory, activePath, rootPath } = useFileTreeContext();
   const fileContent = useFileContent({ enableAutoSave: true, autoSaveDelay: 1000 }); // Auto-save after 1 second
+  const toast = useToast();
   const [wordCount, setWordCount] = useState(0);
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
 
@@ -40,8 +42,13 @@ function AppContent() {
   }, [fileContent]);
 
   const handleSave = useCallback(async () => {
-    await fileContent.saveFile();
-  }, [fileContent]);
+    const success = await fileContent.saveFile();
+    if (success) {
+      toast.showSuccess('File saved successfully');
+    } else if (fileContent.error) {
+      toast.showError(`Failed to save file: ${fileContent.error}`);
+    }
+  }, [fileContent, toast]);
 
   const handleOpenFolder = useCallback(async () => {
     const result = await fileSystemService.openDirectory();
@@ -49,8 +56,11 @@ function AppContent() {
       await loadDirectory(result.path);
       // Watch directory for changes
       await fileSystemService.watchDirectory(result.path);
+      toast.showSuccess(`Opened folder: ${result.path.split('/').pop()}`);
+    } else if (!result.canceled && result.error) {
+      toast.showError(`Failed to open folder: ${result.error}`);
     }
-  }, [loadDirectory]);
+  }, [loadDirectory, toast]);
 
   const handleNewFile = useCallback(() => {
     // New file is handled via file tree context menu
@@ -183,12 +193,14 @@ function AppContent() {
   );
 }
 
-// Main App component with FileTreeProvider wrapper
+// Main App component with providers
 function App() {
   return (
-    <FileTreeProvider>
-      <AppContent />
-    </FileTreeProvider>
+    <ToastProvider>
+      <FileTreeProvider>
+        <AppContent />
+      </FileTreeProvider>
+    </ToastProvider>
   );
 }
 
