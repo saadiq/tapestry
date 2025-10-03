@@ -1,7 +1,7 @@
+import { useEffect } from 'react';
 import { EditorContent } from '@tiptap/react';
 import { useEditor } from '../../hooks/useEditor';
 import { EditorToolbar } from './EditorToolbar';
-import { useEffect } from 'react';
 
 interface EditorComponentProps {
   content?: string;
@@ -22,13 +22,6 @@ export const EditorComponent = ({
     placeholder,
     editable,
   });
-
-  // Update editor content when prop changes
-  useEffect(() => {
-    if (editor && content !== editor.getHTML()) {
-      editor.commands.setContent(content);
-    }
-  }, [content, editor]);
 
   // Set up keyboard shortcuts
   useEffect(() => {
@@ -58,8 +51,8 @@ export const EditorComponent = ({
   return (
     <div className="flex h-full flex-col bg-base-100">
       <EditorToolbar editor={editor} />
-      <div className="flex-1 overflow-y-auto">
-        <EditorContent editor={editor} className="h-full" />
+      <div className="flex-1 overflow-auto">
+        <EditorContent editor={editor} />
       </div>
     </div>
   );

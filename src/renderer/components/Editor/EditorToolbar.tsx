@@ -63,7 +63,7 @@ export const EditorToolbar = ({ editor }: EditorToolbarProps) => {
   );
 
   return (
-    <div className="border-b border-base-300 bg-base-100 p-2">
+    <div className="border-b border-base-300 bg-base-100 p-2 flex-shrink-0">
       <div className="flex flex-wrap gap-1">
         {/* Undo/Redo */}
         <div className="join">

@@ -1,9 +1,11 @@
+import { useEffect, useRef } from 'react';
 import { useEditor as useTipTapEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Typography from '@tiptap/extension-typography';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
+import MarkdownIt from 'markdown-it';
 
 interface UseEditorOptions {
   content?: string;
@@ -18,6 +20,9 @@ export const useEditor = ({
   placeholder = 'Start typing your document...',
   editable = true,
 }: UseEditorOptions = {}) => {
+  const lastContentRef = useRef(content);
+  const md = useRef(new MarkdownIt('commonmark', { html: false, breaks: true }));
+
   const editor = useTipTapEditor({
     extensions: [
       StarterKit.configure({
@@ -49,20 +54,52 @@ export const useEditor = ({
         },
       }),
     ],
-    content,
+    content: '',
     editable,
     onUpdate: ({ editor }) => {
       if (onUpdate) {
-        const markdown = editor.getHTML();
-        onUpdate(markdown);
+        // Get HTML content from editor
+        const html = editor.getHTML();
+        lastContentRef.current = html;
+        onUpdate(html);
       }
     },
     editorProps: {
       attributes: {
-        class: 'prose prose-sm sm:prose lg:prose-lg xl:prose-xl max-w-none focus:outline-none min-h-full p-8',
+        class: 'focus:outline-none',
       },
     },
   });
+
+  // Sync external content into the editor
+  useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
+    if (content === undefined || content === null) {
+      return;
+    }
+
+    // Avoid updating if content hasn't changed
+    if (content === lastContentRef.current) {
+      return;
+    }
+
+    try {
+      // Convert markdown to HTML using markdown-it
+      const html = md.current.render(content);
+
+      // Set content in editor
+      editor.commands.setContent(html, false);
+      lastContentRef.current = content;
+    } catch (error) {
+      console.error('Failed to parse markdown content:', error);
+      // Fallback: set as plain text
+      editor.commands.setContent(content, false);
+      lastContentRef.current = content;
+    }
+  }, [content, editor]);
 
   return editor;
 };

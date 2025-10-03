@@ -17,6 +17,8 @@ body {
 /* TipTap Editor Styles */
 .ProseMirror {
   outline: none;
+  padding: 2rem;
+  min-height: 100%;
 }
 
 .ProseMirror p.is-editor-empty:first-child::before {

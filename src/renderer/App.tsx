@@ -15,7 +15,12 @@ import { fileSystemService } from './services/fileSystemService';
 // Inner component that has access to FileTreeContext and Toast
 function AppContent() {
   const { theme, toggleTheme } = useTheme();
-  const { loadDirectory, activePath, rootPath } = useFileTreeContext();
+  const {
+    loadDirectory,
+    openFile: setActiveFile,
+    activePath,
+    rootPath,
+  } = useFileTreeContext();
   const fileContent = useFileContent({ enableAutoSave: true, autoSaveDelay: 1000 }); // Auto-save after 1 second
   const toast = useToast();
   const [wordCount, setWordCount] = useState(0);
@@ -50,15 +55,48 @@ function AppContent() {
     }
   }, [fileContent, toast]);
 
+  const ensureDirectoryContext = useCallback(
+    async (filePath: string) => {
+      const normalizedPath = filePath.replace(/\\/g, '/');
+      const trimmedPath = normalizedPath.replace(/\/+$/, '');
+      const lastSlashIndex = trimmedPath.lastIndexOf('/');
+
+      if (lastSlashIndex <= 0) {
+        return;
+      }
+
+      let directoryPath = trimmedPath.slice(0, lastSlashIndex);
+      if (/^[A-Za-z]:$/.test(directoryPath)) {
+        directoryPath = `${directoryPath}/`;
+      }
+
+      const normalizedRoot = rootPath ? rootPath.replace(/\\/g, '/') : null;
+      const shouldReloadTree =
+        !normalizedRoot || !trimmedPath.startsWith(normalizedRoot);
+
+      if (shouldReloadTree) {
+        if (rootPath) {
+          await fileSystemService.unwatchDirectory(rootPath);
+        }
+
+        await loadDirectory(directoryPath);
+        await fileSystemService.watchDirectory(directoryPath);
+      }
+    },
+    [loadDirectory, rootPath]
+  );
+
   const handleOpenFile = useCallback(async () => {
     const result = await fileSystemService.openFile();
     if (result.success && result.path) {
+      await ensureDirectoryContext(result.path);
+      setActiveFile(result.path);
       await fileContent.loadFile(result.path);
       toast.showSuccess(`Opened file: ${result.path.split('/').pop()}`);
     } else if (!result.canceled && result.error) {
       toast.showError(`Failed to open file: ${result.error}`);
     }
-  }, [fileContent, toast]);
+  }, [ensureDirectoryContext, fileContent, setActiveFile, toast]);
 
   const handleOpenFolder = useCallback(async () => {
     const result = await fileSystemService.openDirectory();
