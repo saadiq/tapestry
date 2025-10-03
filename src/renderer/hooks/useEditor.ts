@@ -6,6 +6,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import MarkdownIt from 'markdown-it';
+import TurndownService from 'turndown';
 
 interface UseEditorOptions {
   content?: string;
@@ -20,8 +21,12 @@ export const useEditor = ({
   placeholder = 'Start typing your document...',
   editable = true,
 }: UseEditorOptions = {}) => {
-  const lastContentRef = useRef(content);
+  const lastContentRef = useRef('');
   const md = useRef(new MarkdownIt('commonmark', { html: false, breaks: true }));
+  const turndown = useRef(new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+  }));
 
   const editor = useTipTapEditor({
     extensions: [
@@ -58,10 +63,11 @@ export const useEditor = ({
     editable,
     onUpdate: ({ editor }) => {
       if (onUpdate) {
-        // Get HTML content from editor
+        // Get HTML content from editor and convert to markdown
         const html = editor.getHTML();
-        lastContentRef.current = html;
-        onUpdate(html);
+        const markdown = turndown.current.turndown(html);
+        lastContentRef.current = markdown;
+        onUpdate(markdown);
       }
     },
     editorProps: {

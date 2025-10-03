@@ -31,7 +31,7 @@ function AppContent() {
     if (activePath) {
       fileContent.loadFile(activePath);
     }
-  }, [activePath]);
+  }, [activePath, fileContent.loadFile]);
 
   // Update word count when content changes
   useEffect(() => {
