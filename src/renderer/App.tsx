@@ -1,5 +1,5 @@
 import './index.css';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { MainLayout } from './components/Layout/MainLayout';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { FileTreeProvider, useFileTreeContext } from './store/fileTreeStore';
@@ -7,6 +7,7 @@ import { EditorComponent } from './components/Editor/EditorComponent';
 import { NoDirectorySelected } from './components/EmptyStates/NoDirectorySelected';
 import { NoFileOpen } from './components/EmptyStates/NoFileOpen';
 import { ToastProvider, useToast } from './components/Notifications';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useFileContent } from './hooks/useFileContent';
@@ -21,17 +22,60 @@ function AppContent() {
     activePath,
     rootPath,
   } = useFileTreeContext();
-  const fileContent = useFileContent({ enableAutoSave: true, autoSaveDelay: 1000 }); // Auto-save after 1 second
   const toast = useToast();
   const [wordCount, setWordCount] = useState(0);
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
 
-  // Load file when activePath changes
+  // Track when we're saving to prevent file watcher from reloading during our own saves
+  const isSavingRef = useRef(false);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Track last loaded file path to prevent redundant reloads
+  const lastLoadedPathRef = useRef<string | null>(null);
+
+  // Save lifecycle callbacks to track save state
+  const handleBeforeSave = useCallback(() => {
+    isSavingRef.current = true;
+
+    // Clear any existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+  }, []);
+
+  const handleAfterSave = useCallback((success: boolean) => {
+    // Keep isSaving true for 1000ms after save to ignore delayed file watcher events
+    saveTimeoutRef.current = setTimeout(() => {
+      isSavingRef.current = false;
+      saveTimeoutRef.current = null;
+    }, 1000);
+  }, []);
+
+  const fileContent = useFileContent({
+    enableAutoSave: false, // DISABLED: Auto-save causes app reset - use manual save (Cmd+S) only
+    autoSaveDelay: 1000,
+    // CALLBACKS DISABLED: Testing if callbacks cause reset
+    // onBeforeSave: handleBeforeSave,
+    // onAfterSave: handleAfterSave
+  });
+
+  // Store latest fileContent methods in refs to avoid stale closures
+  // Update refs directly in render (safe because refs don't trigger re-renders)
+  const saveFileRef = useRef(fileContent.saveFile);
+  saveFileRef.current = fileContent.saveFile;
+
+  const updateContentRef = useRef(fileContent.updateContent);
+  updateContentRef.current = fileContent.updateContent;
+
+  // Load file when activePath changes (only if it's actually different from last loaded)
   useEffect(() => {
-    if (activePath) {
+    if (activePath && activePath !== lastLoadedPathRef.current) {
+      lastLoadedPathRef.current = activePath;
       fileContent.loadFile(activePath);
     }
-  }, [activePath, fileContent.loadFile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Only activePath should trigger this - fileContent.loadFile is used but not a dependency
+  }, [activePath]);
 
   // Update word count when content changes
   useEffect(() => {
@@ -43,17 +87,24 @@ function AppContent() {
   }, [fileContent.content]);
 
   const handleUpdate = useCallback((newContent: string) => {
-    fileContent.updateContent(newContent);
-  }, [fileContent]);
+    // Use ref to get latest updateContent function, avoiding stale closure
+    updateContentRef.current(newContent);
+  }, []);
 
   const handleSave = useCallback(async () => {
-    const success = await fileContent.saveFile();
-    if (success) {
-      toast.showSuccess('File saved successfully');
-    } else if (fileContent.error) {
-      toast.showError(`Failed to save file: ${fileContent.error}`);
+    try {
+      // Use ref to get latest saveFile function, avoiding stale closure
+      const success = await saveFileRef.current();
+      if (success) {
+        toast.showSuccess('File saved successfully');
+      } else if (fileContent.error) {
+        toast.showError(`Failed to save file: ${fileContent.error}`);
+      }
+    } catch (error) {
+      console.error('Save error:', error);
+      throw error; // Re-throw to let ErrorBoundary catch it
     }
-  }, [fileContent, toast]);
+  }, [toast, fileContent.error]);
 
   const ensureDirectoryContext = useCallback(
     async (filePath: string) => {
@@ -90,13 +141,13 @@ function AppContent() {
     const result = await fileSystemService.openFile();
     if (result.success && result.path) {
       await ensureDirectoryContext(result.path);
+      // Setting activePath will trigger the useEffect to load the file
       setActiveFile(result.path);
-      await fileContent.loadFile(result.path);
       toast.showSuccess(`Opened file: ${result.path.split('/').pop()}`);
     } else if (!result.canceled && result.error) {
       toast.showError(`Failed to open file: ${result.error}`);
     }
-  }, [ensureDirectoryContext, fileContent, setActiveFile, toast]);
+  }, [ensureDirectoryContext, setActiveFile, toast]);
 
   const handleOpenFolder = useCallback(async () => {
     const result = await fileSystemService.openDirectory();
@@ -151,11 +202,22 @@ function AppContent() {
   }, [fileContent.isDirty]);
 
   // Listen for file system changes
+  // TEMPORARILY DISABLED: File watcher auto-reload is causing app resets during save
+  // TODO: Re-enable once we've fully debugged the save -> reload -> reset issue
+  /*
   useEffect(() => {
     if (!rootPath) return;
 
+    // Create stable handler function using current rootPath
     const handleFileChange = async () => {
-      // Reload directory tree when files change
+      // Ignore file watcher events if we're currently saving (prevents reload from our own saves)
+      if (isSavingRef.current) {
+        console.log('[FileWatcher] Ignoring file change event during save operation');
+        return;
+      }
+
+      // Reload directory tree when files change externally
+      console.log('[FileWatcher] Reloading directory due to external file change');
       await loadDirectory(rootPath);
     };
 
@@ -165,12 +227,15 @@ function AppContent() {
     }
 
     return () => {
-      // Clean up listener
+      // Clean up listener - this now works correctly because handleFileChange
+      // is the same reference that was registered above
       if (window.electronAPI?.fileSystem?.removeFileChangeListener) {
         window.electronAPI.fileSystem.removeFileChangeListener(handleFileChange);
       }
     };
+    // Only re-run when rootPath changes, loadDirectory is stable from useCallback
   }, [rootPath, loadDirectory]);
+  */
 
   // Listen for menu events from main process
   useEffect(() => {
@@ -250,11 +315,13 @@ function AppContent() {
 // Main App component with providers
 function App() {
   return (
-    <ToastProvider>
-      <FileTreeProvider>
-        <AppContent />
-      </FileTreeProvider>
-    </ToastProvider>
+    <ErrorBoundary>
+      <ToastProvider>
+        <FileTreeProvider>
+          <AppContent />
+        </FileTreeProvider>
+      </ToastProvider>
+    </ErrorBoundary>
   );
 }
 

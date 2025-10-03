@@ -17,6 +17,12 @@ import { isMarkdownFile } from './fileHandlers';
 const watchers = new Map<string, FSWatcher>();
 
 /**
+ * Debounce timers map (directory path -> NodeJS.Timeout)
+ * Used to debounce file change events since fs.watch fires multiple events per file change
+ */
+const debounceTimers = new Map<string, NodeJS.Timeout>();
+
+/**
  * Watch a directory for changes
  */
 export function watchDirectory(
@@ -42,24 +48,38 @@ export function watchDirectory(
         // Only watch markdown files
         if (!isMarkdownFile(filename)) return;
 
-        // Map fs.watch event types to our event types
-        let type: FileWatcherEventType;
-        if (eventType === 'rename') {
-          // 'rename' can mean both created and deleted
-          // We'll treat it as 'modified' for simplicity
-          type = 'modified';
-        } else {
-          type = 'modified';
+        // Debounce file change events - fs.watch fires multiple events for single file change
+        const timerId = debounceTimers.get(dirPath);
+        if (timerId) {
+          clearTimeout(timerId);
         }
 
-        const event: FileWatcherEvent = {
-          type,
-          path: filename,
-          timestamp: new Date(),
-        };
+        // Wait 100ms before sending event - this groups multiple rapid events into one
+        debounceTimers.set(
+          dirPath,
+          setTimeout(() => {
+            debounceTimers.delete(dirPath);
 
-        // Send event to renderer
-        mainWindow.webContents.send('file-watcher-event', event);
+            // Map fs.watch event types to our event types
+            let type: FileWatcherEventType;
+            if (eventType === 'rename') {
+              // 'rename' can mean both created and deleted
+              // We'll treat it as 'modified' for simplicity
+              type = 'modified';
+            } else {
+              type = 'modified';
+            }
+
+            const event: FileWatcherEvent = {
+              type,
+              path: filename,
+              timestamp: new Date(),
+            };
+
+            // Send event to renderer
+            mainWindow.webContents.send('file-watcher-event', event);
+          }, 100)
+        );
       }
     );
 
@@ -94,6 +114,13 @@ export function unwatchDirectory(dirPath: string): FileOperationResult {
       };
     }
 
+    // Clear any pending debounce timer
+    const timerId = debounceTimers.get(dirPath);
+    if (timerId) {
+      clearTimeout(timerId);
+      debounceTimers.delete(dirPath);
+    }
+
     // Close watcher
     watcher.close();
     watchers.delete(dirPath);
@@ -115,6 +142,13 @@ export function unwatchDirectory(dirPath: string): FileOperationResult {
  * Stop all watchers
  */
 export function unwatchAll(): void {
+  // Clear all debounce timers
+  for (const [dirPath, timerId] of debounceTimers.entries()) {
+    clearTimeout(timerId);
+    debounceTimers.delete(dirPath);
+  }
+
+  // Close all watchers
   for (const [dirPath, watcher] of watchers.entries()) {
     watcher.close();
     watchers.delete(dirPath);

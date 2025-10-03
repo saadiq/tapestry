@@ -60,13 +60,20 @@ const electronAPI: IElectronAPI = {
       ipcRenderer.invoke('fs:unwatchDirectory', dirPath),
 
     onFileChange: (callback: (event: FileWatcherEvent) => void): void => {
-      ipcRenderer.on('file-watcher-event', (_event, data: FileWatcherEvent) =>
-        callback(data)
-      );
+      // Create wrapper that ipcRenderer expects and store it on the callback
+      // so we can remove it later with the same reference
+      const wrapper = (_event: any, data: FileWatcherEvent) => callback(data);
+      (callback as any).__ipcWrapper = wrapper;
+      ipcRenderer.on('file-watcher-event', wrapper);
     },
 
     removeFileChangeListener: (callback: (event: FileWatcherEvent) => void): void => {
-      ipcRenderer.removeListener('file-watcher-event', callback as any);
+      // Retrieve the wrapper we stored during onFileChange
+      const wrapper = (callback as any).__ipcWrapper;
+      if (wrapper) {
+        ipcRenderer.removeListener('file-watcher-event', wrapper);
+        delete (callback as any).__ipcWrapper;
+      }
     },
   },
 };

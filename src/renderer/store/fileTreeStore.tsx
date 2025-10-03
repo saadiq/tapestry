@@ -3,7 +3,7 @@
  * Uses React Context API for managing file tree state across components
  */
 
-import { createContext, useContext, ReactNode, useState, useCallback } from 'react';
+import { createContext, useContext, ReactNode, useState, useCallback, useEffect } from 'react';
 import { fileSystemService } from '../services/fileSystemService';
 import type { DirectoryEntry } from '../../shared/types/fileSystem';
 import type {
@@ -42,7 +42,7 @@ export function FileTreeProvider({ children }: FileTreeProviderProps) {
 
   // Transform DirectoryEntry to FileNode
   const transformDirectoryEntriesToFileNodes = useCallback(
-    (entries: DirectoryEntry[], basePath: string = ''): FileNode[] => {
+    (entries: DirectoryEntry[], basePath: string = '', expandedPaths?: Set<string>): FileNode[] => {
       return entries.map((entry) => {
         const node: FileNode = {
           id: entry.path,
@@ -50,11 +50,12 @@ export function FileTreeProvider({ children }: FileTreeProviderProps) {
           path: entry.path,
           type: entry.isDirectory ? 'directory' : 'file',
           extension: entry.extension,
-          isExpanded: false,
+          // Preserve expanded state if expandedPaths is provided
+          isExpanded: expandedPaths ? expandedPaths.has(entry.path) : false,
         };
 
         if (entry.children && entry.children.length > 0) {
-          node.children = transformDirectoryEntriesToFileNodes(entry.children, entry.path);
+          node.children = transformDirectoryEntriesToFileNodes(entry.children, entry.path, expandedPaths);
         }
 
         return node;
@@ -65,11 +66,19 @@ export function FileTreeProvider({ children }: FileTreeProviderProps) {
 
   // Load directory structure
   const loadDirectory = useCallback(async (path: string) => {
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    // Capture current expanded paths before setting loading state
+    let expandedPaths: Set<string> | undefined;
+    setState((prev) => {
+      expandedPaths = prev.expandedPaths;
+      return { ...prev, isLoading: true, error: null };
+    });
+
     try {
       // Call real IPC to load directory contents recursively
       const entries = await fileSystemService.readDirectory(path, true);
-      const nodes = transformDirectoryEntriesToFileNodes(entries, path);
+
+      // Transform with preserved expansion state
+      const nodes = transformDirectoryEntriesToFileNodes(entries, path, expandedPaths);
 
       setState((prev) => ({
         ...prev,

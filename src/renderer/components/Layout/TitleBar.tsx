@@ -68,6 +68,7 @@ export function TitleBar({
           </button>
 
           <button
+            type="button"
             className="btn btn-ghost btn-square btn-sm"
             onClick={onSave}
             disabled={!isDirty}

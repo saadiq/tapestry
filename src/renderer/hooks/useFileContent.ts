@@ -20,6 +20,8 @@ interface UseFileContentState {
 interface UseFileContentOptions {
   autoSaveDelay?: number; // Delay in milliseconds before auto-saving (default: 300ms)
   enableAutoSave?: boolean; // Enable/disable auto-save (default: true)
+  onBeforeSave?: () => void; // Called before save starts (both auto and manual)
+  onAfterSave?: (success: boolean) => void; // Called after save completes (both auto and manual)
 }
 
 interface UseFileContentReturn extends UseFileContentState {
@@ -39,7 +41,12 @@ interface UseFileContentReturn extends UseFileContentState {
 export function useFileContent(
   options: UseFileContentOptions = {}
 ): UseFileContentReturn {
-  const { autoSaveDelay = 300, enableAutoSave = true } = options;
+  const {
+    autoSaveDelay = 300,
+    enableAutoSave = true,
+    onBeforeSave,
+    onAfterSave
+  } = options;
 
   const [state, setState] = useState<UseFileContentState>({
     filePath: null,
@@ -102,13 +109,18 @@ export function useFileContent(
         ...prev,
         error: 'No file is currently open',
       }));
+      onAfterSave?.(false);
       return false;
     }
 
     if (!state.isDirty) {
       // No changes to save
+      onAfterSave?.(true);
       return true;
     }
+
+    // Call before save callback
+    onBeforeSave?.();
 
     setState((prev) => ({ ...prev, saving: true, error: null }));
 
@@ -125,6 +137,7 @@ export function useFileContent(
           isDirty: false,
           saving: false,
         }));
+        onAfterSave?.(true);
         return true;
       } else {
         setState((prev) => ({
@@ -132,6 +145,7 @@ export function useFileContent(
           saving: false,
           error: result.error || 'Failed to save file',
         }));
+        onAfterSave?.(false);
         return false;
       }
     } catch (error: any) {
@@ -140,9 +154,10 @@ export function useFileContent(
         saving: false,
         error: error.message || 'Failed to save file',
       }));
+      onAfterSave?.(false);
       return false;
     }
-  }, [state.filePath, state.content, state.isDirty]);
+  }, [state.filePath, state.content, state.isDirty, onBeforeSave, onAfterSave]);
 
   /**
    * Update file content
