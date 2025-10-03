@@ -4,6 +4,7 @@
     "": {
       "name": "tapestry",
       "dependencies": {
+        "@tanstack/react-virtual": "^3.13.12",
         "@tiptap/extension-image": "^3.6.3",
         "@tiptap/extension-link": "^3.6.3",
         "@tiptap/extension-placeholder": "^3.6.3",
@@ -333,6 +334,10 @@
     "@sindresorhus/is": ["@sindresorhus/is@4.6.0", "", {}, "sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw=="],
 
     "@szmarczak/http-timer": ["@szmarczak/http-timer@4.0.6", "", { "dependencies": { "defer-to-connect": "^2.0.0" } }, "sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w=="],
+
+    "@tanstack/react-virtual": ["@tanstack/react-virtual@3.13.12", "", { "dependencies": { "@tanstack/virtual-core": "3.13.12" }, "peerDependencies": { "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0", "react-dom": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0" } }, "sha512-Gd13QdxPSukP8ZrkbgS2RwoZseTTbQPLnQEn7HY/rqtM+8Zt95f7xKC7N0EsKs7aoz0WzZ+fditZux+F8EzYxA=="],
+
+    "@tanstack/virtual-core": ["@tanstack/virtual-core@3.13.12", "", {}, "sha512-1YBOJfRHV4sXUmWsFSf5rQor4Ss82G8dQWLRbnk3GA4jeP8hQt1hxXh0tmflpC0dz3VgEv/1+qwPyLeWkQuPFA=="],
 
     "@tiptap/core": ["@tiptap/core@3.6.3", "", { "peerDependencies": { "@tiptap/pm": "^3.6.3" } }, "sha512-Y9JOKnMyF9g5UOCiJkonEs70bvLPKfmGIu37Q/OytvZn8zCuq0IIi5qF+SJKUSBzF0+YE/sXYAvcJTz53wIYlg=="],
 
