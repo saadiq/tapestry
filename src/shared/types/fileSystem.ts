@@ -54,6 +54,16 @@ export interface DirectoryPickerResult {
 }
 
 /**
+ * File picker result
+ */
+export interface FilePickerResult {
+  success: boolean;
+  path?: string;
+  canceled: boolean;
+  error?: string;
+}
+
+/**
  * File watcher event types
  */
 export type FileWatcherEventType = 'created' | 'modified' | 'deleted';

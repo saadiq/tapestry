@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 
 interface KeyboardShortcuts {
   onSave?: () => void;
+  onOpenFile?: () => void;
   onOpenFolder?: () => void;
   onNewFile?: () => void;
   onToggleSidebar?: () => void;
@@ -10,6 +11,7 @@ interface KeyboardShortcuts {
 
 export function useKeyboardShortcuts({
   onSave,
+  onOpenFile,
   onOpenFolder,
   onNewFile,
   onToggleSidebar,
@@ -29,7 +31,12 @@ export function useKeyboardShortcuts({
           break;
         case 'o':
           e.preventDefault();
-          onOpenFolder?.();
+          // Cmd+Shift+O opens file, Cmd+O opens folder
+          if (e.shiftKey) {
+            onOpenFile?.();
+          } else {
+            onOpenFolder?.();
+          }
           break;
         case 'n':
           e.preventDefault();
@@ -53,5 +60,5 @@ export function useKeyboardShortcuts({
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [onSave, onOpenFolder, onNewFile, onToggleSidebar, onFind]);
+  }, [onSave, onOpenFile, onOpenFolder, onNewFile, onToggleSidebar, onFind]);
 }

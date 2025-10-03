@@ -75,6 +75,10 @@ function registerIpcHandlers() {
     return await fileHandlers.fileExists(filePath);
   });
 
+  ipcMain.handle('fs:openFile', async () => {
+    return await fileHandlers.openFile();
+  });
+
   // Directory operations
   ipcMain.handle('fs:openDirectory', async () => {
     return await directoryHandlers.openDirectory();

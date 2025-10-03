@@ -12,6 +12,7 @@ import type {
   FileContent,
   FileOperationResult,
   DirectoryPickerResult,
+  FilePickerResult,
   DirectoryEntry,
   FileWatcherEvent,
 } from '../shared/types/fileSystem';
@@ -40,6 +41,9 @@ const electronAPI: IElectronAPI = {
 
     fileExists: (filePath: string): Promise<boolean> =>
       ipcRenderer.invoke('fs:fileExists', filePath),
+
+    openFile: (): Promise<FilePickerResult> =>
+      ipcRenderer.invoke('fs:openFile'),
 
     // Directory operations
     openDirectory: (): Promise<DirectoryPickerResult> =>
@@ -74,6 +78,7 @@ contextBridge.exposeInMainWorld('electron', {
   on: (channel: string, callback: (...args: any[]) => void) => {
     const validChannels = [
       'menu-new-file',
+      'menu-open-file',
       'menu-open-folder',
       'menu-save',
       'menu-save-as',
@@ -87,6 +92,7 @@ contextBridge.exposeInMainWorld('electron', {
   removeListener: (channel: string, callback: (...args: any[]) => void) => {
     const validChannels = [
       'menu-new-file',
+      'menu-open-file',
       'menu-open-folder',
       'menu-save',
       'menu-save-as',

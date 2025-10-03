@@ -50,6 +50,16 @@ function AppContent() {
     }
   }, [fileContent, toast]);
 
+  const handleOpenFile = useCallback(async () => {
+    const result = await fileSystemService.openFile();
+    if (result.success && result.path) {
+      await fileContent.loadFile(result.path);
+      toast.showSuccess(`Opened file: ${result.path.split('/').pop()}`);
+    } else if (!result.canceled && result.error) {
+      toast.showError(`Failed to open file: ${result.error}`);
+    }
+  }, [fileContent, toast]);
+
   const handleOpenFolder = useCallback(async () => {
     const result = await fileSystemService.openDirectory();
     if (result.success && result.path) {
@@ -79,6 +89,7 @@ function AppContent() {
   // Set up keyboard shortcuts
   useKeyboardShortcuts({
     onSave: handleSave,
+    onOpenFile: handleOpenFile,
     onOpenFolder: handleOpenFolder,
     onNewFile: handleNewFile,
     onToggleSidebar: handleToggleSidebar,
@@ -126,6 +137,9 @@ function AppContent() {
   // Listen for menu events from main process
   useEffect(() => {
     const handleMenuNewFile = () => handleNewFile();
+    const handleMenuOpenFile = async () => {
+      await handleOpenFile();
+    };
     const handleMenuOpenFolder = async () => {
       await handleOpenFolder();
     };
@@ -136,6 +150,7 @@ function AppContent() {
     // Set up IPC listeners (requires preload script setup)
     if (window.electron) {
       window.electron.on('menu-new-file', handleMenuNewFile);
+      window.electron.on('menu-open-file', handleMenuOpenFile);
       window.electron.on('menu-open-folder', handleMenuOpenFolder);
       window.electron.on('menu-save', handleMenuSave);
       window.electron.on('menu-toggle-sidebar', handleMenuToggleSidebar);
@@ -146,13 +161,14 @@ function AppContent() {
       // Clean up listeners
       if (window.electron) {
         window.electron.removeListener('menu-new-file', handleMenuNewFile);
+        window.electron.removeListener('menu-open-file', handleMenuOpenFile);
         window.electron.removeListener('menu-open-folder', handleMenuOpenFolder);
         window.electron.removeListener('menu-save', handleMenuSave);
         window.electron.removeListener('menu-toggle-sidebar', handleMenuToggleSidebar);
         window.electron.removeListener('menu-find', handleMenuFind);
       }
     };
-  }, [handleNewFile, handleOpenFolder, handleSave, handleToggleSidebar, handleFind]);
+  }, [handleNewFile, handleOpenFile, handleOpenFolder, handleSave, handleToggleSidebar, handleFind]);
 
   return (
     <MainLayout

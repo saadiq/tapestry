@@ -2,6 +2,7 @@
  * File system operations handlers for the main process
  */
 
+import { dialog } from 'electron';
 import { promises as fs } from 'fs';
 import path from 'path';
 import type {
@@ -9,19 +10,27 @@ import type {
   FileOperationResult,
   FileMetadata,
   FileSystemErrorCode,
+  FilePickerResult,
 } from '../../shared/types/fileSystem';
 
 /**
- * Allowed markdown file extensions
+ * Allowed file extensions for editing
  */
-const ALLOWED_EXTENSIONS = ['.md', '.markdown'];
+const ALLOWED_EXTENSIONS = ['.md', '.markdown', '.txt'];
 
 /**
- * Check if a file is a markdown file
+ * Check if a file is an allowed file type
  */
-export function isMarkdownFile(filePath: string): boolean {
+export function isAllowedFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
   return ALLOWED_EXTENSIONS.includes(ext);
+}
+
+/**
+ * Legacy alias for backward compatibility
+ */
+export function isMarkdownFile(filePath: string): boolean {
+  return isAllowedFile(filePath);
 }
 
 /**
@@ -306,5 +315,51 @@ export async function fileExists(filePath: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Open file picker dialog
+ */
+export async function openFile(): Promise<FilePickerResult> {
+  try {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      title: 'Open File',
+      filters: [
+        { name: 'Text Files', extensions: ['md', 'markdown', 'txt'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+
+    if (result.canceled) {
+      return {
+        success: false,
+        canceled: true,
+      };
+    }
+
+    const filePath = result.filePaths[0];
+
+    // Validate file type
+    if (!isAllowedFile(filePath)) {
+      return {
+        success: false,
+        canceled: false,
+        error: 'Only .md, .markdown, and .txt files are supported',
+      };
+    }
+
+    return {
+      success: true,
+      path: filePath,
+      canceled: false,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      canceled: false,
+      error: `UNKNOWN_ERROR: ${error.message}`,
+    };
   }
 }

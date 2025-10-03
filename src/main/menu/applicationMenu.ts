@@ -36,6 +36,13 @@ export function createApplicationMenu(mainWindow: BrowserWindow | null) {
           }
         },
         {
+          label: 'Open File...',
+          accelerator: 'CmdOrCtrl+Shift+O',
+          click: () => {
+            mainWindow?.webContents.send('menu-open-file');
+          }
+        },
+        {
           label: 'Open Folder...',
           accelerator: 'CmdOrCtrl+O',
           click: async () => {

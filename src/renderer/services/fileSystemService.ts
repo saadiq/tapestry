@@ -6,6 +6,7 @@ import type {
   FileContent,
   FileOperationResult,
   DirectoryPickerResult,
+  FilePickerResult,
   DirectoryEntry,
   FileWatcherEvent,
 } from '../../shared/types/fileSystem';
@@ -54,6 +55,13 @@ class FileSystemService {
    */
   async fileExists(filePath: string): Promise<boolean> {
     return await window.electronAPI.fileSystem.fileExists(filePath);
+  }
+
+  /**
+   * Open file picker dialog
+   */
+  async openFile(): Promise<FilePickerResult> {
+    return await window.electronAPI.fileSystem.openFile();
   }
 
   /**
