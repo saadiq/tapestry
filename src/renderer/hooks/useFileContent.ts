@@ -34,6 +34,7 @@ interface UseFileContentReturn extends UseFileContentState {
 
   // State management
   clearError: () => void;
+  clearAutoSaveTimer: () => void;
 }
 
 /**
@@ -190,7 +191,7 @@ export function useFileContent(
         }, autoSaveDelay);
       }
     },
-    [enableAutoSave, autoSaveDelay, clearAutoSaveTimer, saveFile, state.filePath]
+    [enableAutoSave, autoSaveDelay, clearAutoSaveTimer, saveFile]
   );
 
   /**
@@ -246,5 +247,6 @@ export function useFileContent(
     updateOriginalContent,
     closeFile,
     clearError,
+    clearAutoSaveTimer,
   };
 }

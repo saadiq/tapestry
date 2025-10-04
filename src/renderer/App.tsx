@@ -72,9 +72,6 @@ function AppContent() {
   // Loading gate to prevent race conditions from rapid file switching
   const loadingFileRef = useRef<string | null>(null);
 
-  // Track file switching intent to prevent race conditions
-  const switchingFileRef = useRef(false);
-
   // Use refs for frequently changing values in file watcher to avoid closure issues
   const activePathRef = useRef(activePath);
   activePathRef.current = activePath;
@@ -130,8 +127,6 @@ function AppContent() {
       if (loadingFileRef.current === activePath) return;
       loadingFileRef.current = activePath;
 
-      // Mark that we're switching files to prevent race conditions
-      switchingFileRef.current = true;
       setIsLoadingFile(true);
 
       try {
@@ -179,6 +174,8 @@ function AppContent() {
 
             if (diskResult.content === cached.originalContent) {
               // File unchanged on disk - safe to restore cached changes
+              // Clear any pending auto-save timer before manual content update
+              fileContent.clearAutoSaveTimer();
               // Manually set state to avoid double file read
               fileContent.updateOriginalContent(diskResult.content);
               fileContent.updateContent(cached.content);
@@ -192,6 +189,8 @@ function AppContent() {
               // File changed on disk - invalidate cache and use disk content
               console.log('[Cache] File modified on disk, invalidating cache:', activePath);
               fileContentCacheRef.current.delete(activePath);
+              // Clear any pending auto-save timer before manual content update
+              fileContent.clearAutoSaveTimer();
               // Use already-read disk content instead of loading again
               fileContent.updateOriginalContent(diskResult.content);
               fileContent.updateContent(diskResult.content);
@@ -215,9 +214,8 @@ function AppContent() {
         toast.showError(`Failed to load file: ${error instanceof Error ? error.message : 'Unknown error'}`);
         // Optionally clear active file to show error state
       } finally {
-        // Always clear loading gate, switching flag, and loading state
+        // Always clear loading gate and loading state
         loadingFileRef.current = null;
-        switchingFileRef.current = false;
         setIsLoadingFile(false);
       }
     };
