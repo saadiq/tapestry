@@ -18,19 +18,13 @@ import {
 
 interface EditorToolbarProps {
   editor: Editor | null;
+  onOpenLinkPopover: () => void;
 }
 
-export const EditorToolbar = ({ editor }: EditorToolbarProps) => {
+export const EditorToolbar = ({ editor, onOpenLinkPopover }: EditorToolbarProps) => {
   if (!editor) {
     return null;
   }
-
-  const addLink = () => {
-    const url = window.prompt('Enter URL:');
-    if (url) {
-      editor.chain().focus().setLink({ href: url }).run();
-    }
-  };
 
   const addImage = () => {
     const url = window.prompt('Enter image URL:');
@@ -189,7 +183,7 @@ export const EditorToolbar = ({ editor }: EditorToolbarProps) => {
         {/* Links & Images */}
         <div className="join">
           <ToolbarButton
-            onClick={addLink}
+            onClick={onOpenLinkPopover}
             active={editor.isActive('link')}
             title="Add Link (Cmd+K)"
           >

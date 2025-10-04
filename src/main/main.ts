@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import * as fileHandlers from './fileSystem/fileHandlers';
@@ -50,6 +50,11 @@ const createWindow = () => {
 
 // Register IPC handlers for file system operations
 function registerIpcHandlers() {
+  // Shell operations
+  ipcMain.handle('shell:openExternal', async (_event, url: string) => {
+    await shell.openExternal(url);
+  });
+
   // File operations
   ipcMain.handle('fs:readFile', async (_event, filePath: string) => {
     return await fileHandlers.readFile(filePath);

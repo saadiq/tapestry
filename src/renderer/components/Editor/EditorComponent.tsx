@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { EditorContent } from '@tiptap/react';
 import { useEditor } from '../../hooks/useEditor';
 import { EditorToolbar } from './EditorToolbar';
+import { LinkPopover } from './LinkPopover';
 
 interface EditorComponentProps {
   content?: string;
@@ -19,6 +20,7 @@ export const EditorComponent = ({
   editable = true,
 }: EditorComponentProps) => {
   const [, forceUpdate] = useState({});
+  const [isLinkPopoverOpen, setIsLinkPopoverOpen] = useState(false);
 
   const editor = useEditor({
     content,
@@ -35,13 +37,10 @@ export const EditorComponent = ({
     if (!editor) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd/Ctrl + K for link
+      // Cmd/Ctrl + K for link popover
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        const url = window.prompt('Enter URL:');
-        if (url) {
-          editor.chain().focus().setLink({ href: url }).run();
-        }
+        setIsLinkPopoverOpen(true);
       }
 
       // Cmd/Ctrl + E for inline code (alternative)
@@ -57,10 +56,15 @@ export const EditorComponent = ({
 
   return (
     <div className="flex h-full flex-col bg-base-100">
-      <EditorToolbar editor={editor} />
+      <EditorToolbar editor={editor} onOpenLinkPopover={() => setIsLinkPopoverOpen(true)} />
       <div className="flex-1 overflow-auto">
         <EditorContent editor={editor} />
       </div>
+      <LinkPopover
+        editor={editor}
+        isOpen={isLinkPopoverOpen}
+        onClose={() => setIsLinkPopoverOpen(false)}
+      />
     </div>
   );
 };
