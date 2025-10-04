@@ -16,11 +16,12 @@ import {
   Redo,
   Code2,
 } from 'lucide-react';
+import type { ViewMode } from '@shared/types/editor';
 
 interface EditorToolbarProps {
   editor: Editor | null;
   onOpenLinkPopover: () => void;
-  viewMode?: 'wysiwyg' | 'markdown';
+  viewMode?: ViewMode;
   onToggleViewMode?: () => void;
 }
 

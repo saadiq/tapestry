@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EditorContent } from '@tiptap/react';
 import { useEditor } from '../../hooks/useEditor';
 import { EditorToolbar } from './EditorToolbar';
 import { LinkPopover } from './LinkPopover';
 import { MarkdownEditor } from './MarkdownEditor';
-
-type ViewMode = 'wysiwyg' | 'markdown';
+import { createMarkdownParser } from '../../utils/markdown';
+import type { ViewMode } from '@shared/types/editor';
 
 interface EditorComponentProps {
   content?: string;
@@ -31,6 +31,16 @@ export const EditorComponent = ({
     return (saved === 'markdown' ? 'markdown' : 'wysiwyg') as ViewMode;
   });
 
+  // Use ref to avoid race conditions in keyboard shortcuts during rapid view switching
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
+
+  // Track previous view mode to detect transitions
+  const prevViewModeRef = useRef(viewMode);
+
+  // Create markdown-it instance for content conversion
+  const md = useRef(createMarkdownParser());
+
   const editor = useEditor({
     content,
     onUpdate,
@@ -46,6 +56,23 @@ export const EditorComponent = ({
     localStorage.setItem('editor-view-mode', viewMode);
   }, [viewMode]);
 
+  // Sync content when switching from markdown → WYSIWYG
+  // This ensures that changes made in markdown mode are immediately reflected in WYSIWYG mode
+  // Only syncs on actual view mode transitions to prevent infinite loops
+  useEffect(() => {
+    if (
+      viewMode === 'wysiwyg' &&
+      prevViewModeRef.current === 'markdown' &&
+      editor &&
+      content
+    ) {
+      // Convert markdown to HTML and set in editor
+      const html = md.current.render(content);
+      editor.commands.setContent(html);
+    }
+    prevViewModeRef.current = viewMode;
+  }, [viewMode, editor, content]);
+
   // Toggle view mode
   const toggleViewMode = () => {
     setViewMode((prev) => (prev === 'wysiwyg' ? 'markdown' : 'wysiwyg'));
@@ -56,8 +83,8 @@ export const EditorComponent = ({
     if (!editor) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle WYSIWYG shortcuts when in WYSIWYG mode
-      if (viewMode !== 'wysiwyg') return;
+      // Only handle WYSIWYG shortcuts when in WYSIWYG mode (use ref to avoid stale closures)
+      if (viewModeRef.current !== 'wysiwyg') return;
 
       // Cmd/Ctrl + K for link popover
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -74,7 +101,7 @@ export const EditorComponent = ({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [editor, viewMode]);
+  }, [editor]);
 
   return (
     <div className="flex h-full flex-col bg-base-100">
