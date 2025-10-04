@@ -41,6 +41,8 @@ export interface FileTreeState {
   searchQuery: string;
   /** Expanded directory paths */
   expandedPaths: Set<string>;
+  /** Files with unsaved changes */
+  dirtyPaths: Set<string>;
   /** Loading state */
   isLoading: boolean;
   /** Error state */
@@ -70,6 +72,8 @@ export interface FileTreeActions {
   refresh: () => Promise<void>;
   /** Clear all state */
   clear: () => void;
+  /** Mark a file as dirty (has unsaved changes) */
+  setFileDirty: (path: string, isDirty: boolean) => void;
 }
 
 export interface ContextMenuPosition {
