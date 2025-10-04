@@ -22,6 +22,9 @@ import type {
 const electronAPI: IElectronAPI = {
   platform: process.platform,
 
+  openExternal: (url: string): Promise<void> =>
+    ipcRenderer.invoke('shell:openExternal', url),
+
   fileSystem: {
     // File operations
     readFile: (filePath: string): Promise<FileContent> =>

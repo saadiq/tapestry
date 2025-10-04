@@ -14,6 +14,9 @@ export interface IElectronAPI {
   // Platform info
   platform: NodeJS.Platform;
 
+  // Shell operations
+  openExternal: (url: string) => Promise<void>;
+
   // File operations
   fileSystem: {
     // File operations
