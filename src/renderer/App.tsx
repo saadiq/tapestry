@@ -75,16 +75,6 @@ function AppContent() {
   // Loading gate to prevent race conditions from rapid file switching
   const loadingFileRef = useRef<string | null>(null);
 
-  // Use refs for frequently changing values in file watcher to avoid closure issues
-  const activePathRef = useRef(activePath);
-  activePathRef.current = activePath;
-
-  const fileContentRef = useRef(fileContent);
-  fileContentRef.current = fileContent;
-
-  const toastRef = useRef(toast);
-  toastRef.current = toast;
-
   // Save lifecycle callbacks to track save state
   const handleBeforeSave = useCallback(() => {
     isSavingRef.current = true;
@@ -127,6 +117,16 @@ function AppContent() {
     onBeforeSave: handleBeforeSave,
     onAfterSave: handleAfterSave
   });
+
+  // Use refs for frequently changing values in file watcher to avoid closure issues
+  const activePathRef = useRef(activePath);
+  activePathRef.current = activePath;
+
+  const fileContentRef = useRef(fileContent);
+  fileContentRef.current = fileContent;
+
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
 
   // Store latest fileContent methods in refs to avoid stale closures
   // Update refs directly in render (safe because refs don't trigger re-renders)
