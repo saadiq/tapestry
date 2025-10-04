@@ -36,6 +36,7 @@ import type { FileWatcherEvent } from '../shared/types/fileSystem';
 interface FileContentCache {
   content: string;
   originalContent: string;
+  rawDiskContent: string; // Raw disk content for cache validation
   isDirty: boolean;
   timestamp: number; // For cache validation and true LRU implementation
 }
@@ -61,6 +62,9 @@ function AppContent() {
 
   // Multi-file content cache - stores unsaved changes for all opened files
   const fileContentCacheRef = useRef<Map<string, FileContentCache>>(new Map());
+
+  // Track raw disk content for cache validation (Map: filePath -> raw content)
+  const rawDiskContentRef = useRef<Map<string, string>>(new Map());
 
   // Track when we're saving to prevent file watcher from reloading during our own saves
   const isSavingRef = useRef(false);
@@ -98,6 +102,7 @@ function AppContent() {
       // This handles both auto-save and manual save
       if (success && activePathRef.current) {
         fileContentCacheRef.current.delete(activePathRef.current);
+        rawDiskContentRef.current.delete(activePathRef.current);
         setFileDirty(activePathRef.current, false);
       }
 
@@ -182,9 +187,13 @@ function AppContent() {
             }
           }
 
+          // Get raw disk content from ref, or empty string if not available
+          const rawDiskContent = rawDiskContentRef.current.get(previousPath) || '';
+
           fileContentCacheRef.current.set(previousPath, {
             content: currentContent,
             originalContent: currentOriginalContent,
+            rawDiskContent: rawDiskContent,
             isDirty: currentIsDirty,
             timestamp: Date.now(),
           });
@@ -198,12 +207,16 @@ function AppContent() {
           try {
             const diskResult = await fileSystemService.readFile(activePath);
 
-            if (diskResult.content === cached.originalContent) {
+            // Store raw disk content for future validation
+            rawDiskContentRef.current.set(activePath, diskResult.content);
+
+            if (diskResult.content === cached.rawDiskContent) {
               // File unchanged on disk - safe to restore cached changes
               // Clear any pending auto-save timer before manual content update
               fileContent.clearAutoSaveTimer();
               // Manually set state to avoid double file read
-              fileContent.updateOriginalContent(diskResult.content);
+              // Use cached originalContent (normalized) instead of disk content (raw)
+              fileContent.updateOriginalContent(cached.originalContent);
               fileContent.updateContent(cached.content);
 
               // Update cached entry's timestamp for true LRU
@@ -222,15 +235,29 @@ function AppContent() {
               fileContent.updateContent(diskResult.content);
             }
           } catch (error) {
-            // Error reading file for validation - invalidate cache and try loading
+            // Error reading file for validation - invalidate cache and load from disk
             console.error('[Cache] Error validating cache, invalidating:', error);
             fileContentCacheRef.current.delete(activePath);
             toast.showError(`Error validating cached content: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+            // Load file (loadFile will read the file internally)
             await fileContent.loadFile(activePath);
+            // Raw content will be stored when switching away from this file
           }
         } else {
-          // Load from disk
+          // Load from disk and store raw content
+          // Note: We read the file twice here - once in loadFile, once to store raw content
+          // This is acceptable as it only happens on fresh load (not cache restoration)
           await fileContent.loadFile(activePath);
+
+          // Store raw disk content for future cache validation
+          try {
+            const diskResult = await fileSystemService.readFile(activePath);
+            rawDiskContentRef.current.set(activePath, diskResult.content);
+          } catch (error) {
+            console.error('[Cache] Failed to read raw disk content:', error);
+            // Non-critical: cache validation will fail gracefully without raw content
+          }
         }
 
         lastLoadedPathRef.current = activePath;
@@ -274,6 +301,7 @@ function AppContent() {
   useEffect(() => {
     // Clear cache when switching directories or closing directory (rootPath becomes null)
     fileContentCacheRef.current.clear();
+    rawDiskContentRef.current.clear();
   }, [rootPath]);
 
   // Clean up cache for deleted files synchronously after directory reload (Fix #2)
@@ -298,6 +326,7 @@ function AppContent() {
       if (!validPaths.has(path)) {
         console.log('[Cache] Removing deleted file from cache:', path);
         fileContentCacheRef.current.delete(path);
+        rawDiskContentRef.current.delete(path);
         setFileDirty(path, false);
       }
     }
@@ -309,9 +338,13 @@ function AppContent() {
   }, []);
 
   const handleContentLoaded = useCallback((convertedContent: string) => {
-    // Update the original content to the converted markdown after round-trip
-    // This ensures isDirty comparison uses the same format
-    fileContent.updateOriginalContent(convertedContent);
+    // Only update content and originalContent when file is not dirty
+    // This handles initial file load (normalizes markdown format) but preserves
+    // unsaved changes when restoring from cache
+    if (!fileContent.isDirty) {
+      fileContent.updateOriginalContent(convertedContent);
+      fileContent.updateContent(convertedContent);
+    }
   }, [fileContent]);
 
   const handleSave = useCallback(async () => {
@@ -322,6 +355,7 @@ function AppContent() {
         // Clear cache entry for saved file (Fix #4)
         if (activePath) {
           fileContentCacheRef.current.delete(activePath);
+          rawDiskContentRef.current.delete(activePath);
           setFileDirty(activePath, false);
         }
         toast.showSuccess('File saved successfully');
@@ -382,6 +416,7 @@ function AppContent() {
     if (result.success && result.path) {
       // Clear cache when switching directories
       fileContentCacheRef.current.clear();
+      rawDiskContentRef.current.clear();
       await loadDirectory(result.path);
       // Watch directory for changes
       await fileSystemService.watchDirectory(result.path);
@@ -482,6 +517,7 @@ function AppContent() {
         // Always clear cache and dirty state for externally modified files (Fix #4)
         // This handles both cached and non-cached files (e.g., files evicted from LRU cache)
         fileContentCacheRef.current.delete(event.path);
+        rawDiskContentRef.current.delete(event.path);
         setFileDirty(event.path, false);
       }
 
