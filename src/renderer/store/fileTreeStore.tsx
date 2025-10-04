@@ -36,6 +36,7 @@ export function FileTreeProvider({ children }: FileTreeProviderProps) {
     activePath: null,
     searchQuery: '',
     expandedPaths: new Set(),
+    dirtyPaths: new Set(),
     isLoading: false,
     error: null,
   });
@@ -262,6 +263,22 @@ export function FileTreeProvider({ children }: FileTreeProviderProps) {
     }
   }, [state.rootPath, loadDirectory]);
 
+  // Mark a file as dirty or clean
+  const setFileDirty = useCallback((path: string, isDirty: boolean) => {
+    setState((prev) => {
+      const newDirtyPaths = new Set(prev.dirtyPaths);
+      if (isDirty) {
+        newDirtyPaths.add(path);
+      } else {
+        newDirtyPaths.delete(path);
+      }
+      return {
+        ...prev,
+        dirtyPaths: newDirtyPaths,
+      };
+    });
+  }, []);
+
   // Clear all state
   const clear = useCallback(() => {
     setState({
@@ -271,6 +288,7 @@ export function FileTreeProvider({ children }: FileTreeProviderProps) {
       activePath: null,
       searchQuery: '',
       expandedPaths: new Set(),
+      dirtyPaths: new Set(),
       isLoading: false,
       error: null,
     });
@@ -289,6 +307,7 @@ export function FileTreeProvider({ children }: FileTreeProviderProps) {
     delete: deleteNode,
     refresh,
     clear,
+    setFileDirty,
   };
 
   return (

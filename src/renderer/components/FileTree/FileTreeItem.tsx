@@ -15,6 +15,7 @@ interface FileTreeItemProps {
   onContextMenu: (event: React.MouseEvent, node: FileNode) => void;
   isSelected: boolean;
   isActive: boolean;
+  isDirty: boolean;
 }
 
 export function FileTreeItem({
@@ -26,6 +27,7 @@ export function FileTreeItem({
   onContextMenu,
   isSelected,
   isActive,
+  isDirty,
 }: FileTreeItemProps) {
   const isDirectory = node.type === 'directory';
   const hasChildren = isDirectory && node.children && node.children.length > 0;
@@ -115,10 +117,16 @@ export function FileTreeItem({
         className={`
           text-sm truncate flex-1
           ${isActive ? 'font-semibold text-primary' : 'text-base-content'}
+          ${isDirty ? 'italic' : ''}
         `}
       >
         {node.name}
       </span>
+
+      {/* Dirty indicator (orange dot) for files with unsaved changes */}
+      {isDirty && node.type === 'file' && (
+        <div className="w-2 h-2 rounded-full bg-warning flex-shrink-0" title="Unsaved changes" />
+      )}
     </div>
   );
 }

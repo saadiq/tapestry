@@ -28,6 +28,7 @@ export function FileTree() {
     searchQuery,
     isLoading,
     error,
+    dirtyPaths,
     toggleExpand,
     selectFile,
     openFile,
@@ -306,6 +307,7 @@ export function FileTree() {
                     onContextMenu={handleContextMenu}
                     isSelected={node.path === selectedPath}
                     isActive={node.path === activePath}
+                    isDirty={dirtyPaths.has(node.path)}
                   />
                 </div>
               );

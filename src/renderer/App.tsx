@@ -13,6 +13,13 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useFileContent } from './hooks/useFileContent';
 import { fileSystemService } from './services/fileSystemService';
 
+// Cache entry for multi-file editing
+interface FileContentCache {
+  content: string;
+  originalContent: string;
+  isDirty: boolean;
+}
+
 // Inner component that has access to FileTreeContext and Toast
 function AppContent() {
   const { theme, toggleTheme } = useTheme();
@@ -21,10 +28,14 @@ function AppContent() {
     openFile: setActiveFile,
     activePath,
     rootPath,
+    setFileDirty,
   } = useFileTreeContext();
   const toast = useToast();
   const [wordCount, setWordCount] = useState(0);
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
+
+  // Multi-file content cache - stores unsaved changes for all opened files
+  const fileContentCacheRef = useRef<Map<string, FileContentCache>>(new Map());
 
   // Track when we're saving to prevent file watcher from reloading during our own saves
   const isSavingRef = useRef(false);
@@ -69,12 +80,39 @@ function AppContent() {
 
   // Load file when activePath changes (only if it's actually different from last loaded)
   useEffect(() => {
-    if (activePath && activePath !== lastLoadedPathRef.current) {
+    const loadFileWithCache = async () => {
+      if (!activePath) return;
+
+      // Save current file to cache before switching
+      const previousPath = lastLoadedPathRef.current;
+      if (previousPath && previousPath !== activePath) {
+        fileContentCacheRef.current.set(previousPath, {
+          content: fileContent.content,
+          originalContent: fileContent.originalContent,
+          isDirty: fileContent.isDirty,
+        });
+      }
+
+      // Check if we have cached content for the new file
+      const cached = fileContentCacheRef.current.get(activePath);
+
+      if (cached) {
+        // Restore from cache
+        fileContent.updateContent(cached.content);
+        fileContent.updateOriginalContent(cached.originalContent);
+      } else {
+        // Load from disk
+        await fileContent.loadFile(activePath);
+      }
+
       lastLoadedPathRef.current = activePath;
-      fileContent.loadFile(activePath);
+    };
+
+    if (activePath && activePath !== lastLoadedPathRef.current) {
+      loadFileWithCache();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    // Only activePath should trigger this - fileContent.loadFile is used but not a dependency
+    // Only activePath should trigger this
   }, [activePath]);
 
   // Update word count when content changes
@@ -85,6 +123,13 @@ function AppContent() {
       setWordCount(words);
     }
   }, [fileContent.content]);
+
+  // Sync dirty state to file tree
+  useEffect(() => {
+    if (activePath) {
+      setFileDirty(activePath, fileContent.isDirty);
+    }
+  }, [activePath, fileContent.isDirty, setFileDirty]);
 
   const handleUpdate = useCallback((newContent: string) => {
     // Use ref to get latest updateContent function, avoiding stale closure
@@ -102,6 +147,11 @@ function AppContent() {
       // Use ref to get latest saveFile function, avoiding stale closure
       const success = await saveFileRef.current();
       if (success) {
+        // Clear cache entry for saved file
+        if (activePath) {
+          fileContentCacheRef.current.delete(activePath);
+          setFileDirty(activePath, false);
+        }
         toast.showSuccess('File saved successfully');
       } else if (fileContent.error) {
         toast.showError(`Failed to save file: ${fileContent.error}`);
@@ -110,7 +160,7 @@ function AppContent() {
       console.error('Save error:', error);
       throw error; // Re-throw to let ErrorBoundary catch it
     }
-  }, [toast, fileContent.error]);
+  }, [toast, fileContent.error, activePath, setFileDirty]);
 
   const ensureDirectoryContext = useCallback(
     async (filePath: string) => {
