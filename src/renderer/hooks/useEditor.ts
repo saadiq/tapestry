@@ -11,13 +11,16 @@ import TurndownService from 'turndown';
 interface UseEditorOptions {
   content?: string;
   onUpdate?: (content: string) => void;
+  onSelectionUpdate?: () => void;
   placeholder?: string;
   editable?: boolean;
 }
 
+// Main hook for useEditor
 export const useEditor = ({
   content = '',
   onUpdate,
+  onSelectionUpdate,
   placeholder = 'Start typing your document...',
   editable = true,
 }: UseEditorOptions = {}) => {
@@ -68,6 +71,11 @@ export const useEditor = ({
         const markdown = turndown.current.turndown(html);
         lastContentRef.current = markdown;
         onUpdate(markdown);
+      }
+    },
+    onSelectionUpdate: () => {
+      if (onSelectionUpdate) {
+        onSelectionUpdate();
       }
     },
     editorProps: {

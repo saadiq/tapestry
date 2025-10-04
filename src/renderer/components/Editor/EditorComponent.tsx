@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { EditorContent } from '@tiptap/react';
 import { useEditor } from '../../hooks/useEditor';
 import { EditorToolbar } from './EditorToolbar';
@@ -16,11 +16,15 @@ export const EditorComponent = ({
   placeholder = 'Start typing your document...',
   editable = true,
 }: EditorComponentProps) => {
+  const [, forceUpdate] = useState({});
+
   const editor = useEditor({
     content,
     onUpdate,
     placeholder,
     editable,
+    // Force toolbar re-render on selection changes
+    onSelectionUpdate: () => forceUpdate({}),
   });
 
   // Set up keyboard shortcuts
