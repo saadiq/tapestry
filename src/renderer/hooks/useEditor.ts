@@ -5,6 +5,7 @@ import Typography from '@tiptap/extension-typography';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
+import { TableKit } from '@tiptap/extension-table';
 import MarkdownIt from 'markdown-it';
 import TurndownService from 'turndown';
 
@@ -28,7 +29,7 @@ export const useEditor = ({
 }: UseEditorOptions = {}) => {
   const lastContentRef = useRef('');
   const isSettingContentRef = useRef(false);
-  const md = useRef(new MarkdownIt('commonmark', { html: false, breaks: true }));
+  const md = useRef(new MarkdownIt('default', { html: false, breaks: true }));
   const turndown = useRef(new TurndownService({
     headingStyle: 'atx',
     codeBlockStyle: 'fenced',
@@ -62,6 +63,14 @@ export const useEditor = ({
       Image.configure({
         HTMLAttributes: {
           class: 'max-w-full rounded-lg',
+        },
+      }),
+      TableKit.configure({
+        table: {
+          resizable: true,
+          HTMLAttributes: {
+            class: 'table-auto',
+          },
         },
       }),
     ],
