@@ -50,21 +50,38 @@ const createWindow = () => {
 
 // Register IPC handlers for file system operations
 function registerIpcHandlers() {
-  // Shell operations
+  /**
+   * Validates and opens external URLs safely.
+   * Only allows http, https, and mailto protocols to prevent security exploits
+   * such as file:// disclosure, javascript: execution, or shell command injection.
+   */
   ipcMain.handle('shell:openExternal', async (_event, url: string): Promise<{success: boolean, error?: string}> => {
-    // Validate URL to prevent security exploits
     try {
+      // Validate URL format
       const parsedUrl = new URL(url);
+
+      // Whitelist of allowed protocols
+      // Note: file: protocol is intentionally blocked to prevent local file disclosure attacks
       const allowedProtocols = ['http:', 'https:', 'mailto:'];
 
+      // Check for disallowed protocols (including javascript: and data:)
       if (!allowedProtocols.includes(parsedUrl.protocol)) {
-        return { success: false, error: `Protocol ${parsedUrl.protocol} not allowed` };
+        console.error(`[Security] Blocked attempt to open URL with disallowed protocol: ${parsedUrl.protocol}`);
+        return { success: false, error: 'This type of link cannot be opened for security reasons' };
+      }
+
+      // Additional check for javascript: or data: protocols in the URL string
+      // (defense in depth in case URL parsing doesn't catch edge cases)
+      if (/^(javascript|data):/i.test(url)) {
+        console.error(`[Security] Blocked attempt to open javascript: or data: URL`);
+        return { success: false, error: 'This type of link cannot be opened for security reasons' };
       }
 
       await shell.openExternal(url);
       return { success: true };
     } catch (error) {
-      return { success: false, error: 'Invalid URL' };
+      console.error('[shell:openExternal] Error opening URL:', error);
+      return { success: false, error: 'Unable to open link. Please check the URL format.' };
     }
   });
 

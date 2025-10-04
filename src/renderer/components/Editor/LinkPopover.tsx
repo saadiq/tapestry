@@ -48,9 +48,10 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
     const topPosition = Math.max(start.bottom, end.bottom) + POPOVER_OFFSET;
     const leftPosition = start.left;
 
+    // Constrain position to viewport bounds (prevent negative positions and off-screen rendering)
     setPosition({
-      top: Math.min(topPosition, window.innerHeight - POPOVER_HEIGHT_ESTIMATE),
-      left: Math.min(leftPosition, window.innerWidth - POPOVER_MIN_WIDTH),
+      top: Math.max(0, Math.min(topPosition, window.innerHeight - POPOVER_HEIGHT_ESTIMATE)),
+      left: Math.max(0, Math.min(leftPosition, window.innerWidth - POPOVER_MIN_WIDTH)),
     });
 
     // Focus input after a short delay to ensure it's rendered
