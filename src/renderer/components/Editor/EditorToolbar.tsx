@@ -14,14 +14,23 @@ import {
   Image as ImageIcon,
   Undo,
   Redo,
+  Code2,
 } from 'lucide-react';
+import type { ViewMode } from '@shared/types/editor';
 
 interface EditorToolbarProps {
   editor: Editor | null;
   onOpenLinkPopover: () => void;
+  viewMode?: ViewMode;
+  onToggleViewMode?: () => void;
 }
 
-export const EditorToolbar = ({ editor, onOpenLinkPopover }: EditorToolbarProps) => {
+export const EditorToolbar = ({
+  editor,
+  onOpenLinkPopover,
+  viewMode = 'wysiwyg',
+  onToggleViewMode,
+}: EditorToolbarProps) => {
   if (!editor) {
     return null;
   }
@@ -58,7 +67,8 @@ export const EditorToolbar = ({ editor, onOpenLinkPopover }: EditorToolbarProps)
 
   return (
     <div className="border-b border-base-300 bg-base-100 p-2 flex-shrink-0">
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-1 items-center justify-between">
+        <div className="flex flex-wrap gap-1">
         {/* Undo/Redo */}
         <div className="join">
           <ToolbarButton
@@ -193,6 +203,18 @@ export const EditorToolbar = ({ editor, onOpenLinkPopover }: EditorToolbarProps)
             <ImageIcon className="h-4 w-4" />
           </ToolbarButton>
         </div>
+        </div>
+
+        {/* View Mode Toggle */}
+        {onToggleViewMode && (
+          <ToolbarButton
+            onClick={onToggleViewMode}
+            active={viewMode === 'markdown'}
+            title={viewMode === 'wysiwyg' ? 'Switch to Markdown' : 'Switch to WYSIWYG'}
+          >
+            <Code2 className="h-4 w-4" />
+          </ToolbarButton>
+        )}
       </div>
     </div>
   );
