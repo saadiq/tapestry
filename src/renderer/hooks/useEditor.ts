@@ -11,6 +11,7 @@ import TurndownService from 'turndown';
 interface UseEditorOptions {
   content?: string;
   onUpdate?: (content: string) => void;
+  onContentLoaded?: (convertedContent: string) => void;
   onSelectionUpdate?: () => void;
   placeholder?: string;
   editable?: boolean;
@@ -20,11 +21,13 @@ interface UseEditorOptions {
 export const useEditor = ({
   content = '',
   onUpdate,
+  onContentLoaded,
   onSelectionUpdate,
   placeholder = 'Start typing your document...',
   editable = true,
 }: UseEditorOptions = {}) => {
   const lastContentRef = useRef('');
+  const isSettingContentRef = useRef(false);
   const md = useRef(new MarkdownIt('commonmark', { html: false, breaks: true }));
   const turndown = useRef(new TurndownService({
     headingStyle: 'atx',
@@ -65,6 +68,11 @@ export const useEditor = ({
     content: '',
     editable,
     onUpdate: ({ editor }) => {
+      // Skip onUpdate callback if we're programmatically setting content
+      if (isSettingContentRef.current) {
+        return;
+      }
+
       if (onUpdate) {
         // Get HTML content from editor and convert to markdown
         const html = editor.getHTML();
@@ -101,17 +109,39 @@ export const useEditor = ({
     }
 
     try {
+      // Set flag to prevent onUpdate from firing during programmatic setContent
+      isSettingContentRef.current = true;
+
       // Convert markdown to HTML using markdown-it
       const html = md.current.render(content);
 
       // Set content in editor
       editor.commands.setContent(html, false);
       lastContentRef.current = content;
+
+      // Get the converted markdown after round-trip to use as baseline for dirty checking
+      const convertedHtml = editor.getHTML();
+      const convertedMarkdown = turndown.current.turndown(convertedHtml);
+
+      // Notify parent of the converted content so it can update originalContent
+      if (onContentLoaded) {
+        onContentLoaded(convertedMarkdown);
+      }
+
+      // Reset flag after a short delay to ensure all events have processed
+      setTimeout(() => {
+        isSettingContentRef.current = false;
+      }, 0);
     } catch (error) {
       console.error('Failed to parse markdown content:', error);
       // Fallback: set as plain text
       editor.commands.setContent(content, false);
       lastContentRef.current = content;
+
+      // Reset flag on error too
+      setTimeout(() => {
+        isSettingContentRef.current = false;
+      }, 0);
     }
   }, [content, editor]);
 

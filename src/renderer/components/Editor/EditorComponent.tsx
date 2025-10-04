@@ -6,6 +6,7 @@ import { EditorToolbar } from './EditorToolbar';
 interface EditorComponentProps {
   content?: string;
   onUpdate?: (content: string) => void;
+  onContentLoaded?: (convertedContent: string) => void;
   placeholder?: string;
   editable?: boolean;
 }
@@ -13,6 +14,7 @@ interface EditorComponentProps {
 export const EditorComponent = ({
   content = '',
   onUpdate,
+  onContentLoaded,
   placeholder = 'Start typing your document...',
   editable = true,
 }: EditorComponentProps) => {
@@ -21,6 +23,7 @@ export const EditorComponent = ({
   const editor = useEditor({
     content,
     onUpdate,
+    onContentLoaded,
     placeholder,
     editable,
     // Force toolbar re-render on selection changes

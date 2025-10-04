@@ -91,6 +91,12 @@ function AppContent() {
     updateContentRef.current(newContent);
   }, []);
 
+  const handleContentLoaded = useCallback((convertedContent: string) => {
+    // Update the original content to the converted markdown after round-trip
+    // This ensures isDirty comparison uses the same format
+    fileContent.updateOriginalContent(convertedContent);
+  }, [fileContent]);
+
   const handleSave = useCallback(async () => {
     try {
       // Use ref to get latest saveFile function, avoiding stale closure
@@ -304,6 +310,7 @@ function AppContent() {
         <EditorComponent
           content={fileContent.content}
           onUpdate={handleUpdate}
+          onContentLoaded={handleContentLoaded}
           placeholder="Start typing your document..."
           editable={true}
         />

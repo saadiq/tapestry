@@ -29,6 +29,7 @@ interface UseFileContentReturn extends UseFileContentState {
   loadFile: (filePath: string) => Promise<void>;
   saveFile: () => Promise<boolean>;
   updateContent: (newContent: string) => void;
+  updateOriginalContent: (content: string) => void;
   closeFile: () => void;
 
   // State management
@@ -202,6 +203,17 @@ export function useFileContent(
   }, [clearAutoSaveTimer]);
 
   /**
+   * Update original content (for fixing dirty state after round-trip conversion)
+   */
+  const updateOriginalContent = useCallback((content: string) => {
+    setState((prev) => ({
+      ...prev,
+      originalContent: content,
+      isDirty: prev.content !== content,
+    }));
+  }, []);
+
+  /**
    * Clear error
    */
   const clearError = useCallback(() => {
@@ -222,6 +234,7 @@ export function useFileContent(
     loadFile,
     saveFile,
     updateContent,
+    updateOriginalContent,
     closeFile,
     clearError,
   };
