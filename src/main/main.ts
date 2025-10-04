@@ -69,7 +69,21 @@ function registerIpcHandlers() {
         return { success: false, error: 'Only http://, https://, and mailto: links can be opened' };
       }
 
-      await shell.openExternal(url);
+      // Security: Remove credentials from URL to prevent leaking sensitive information
+      if (parsedUrl.username || parsedUrl.password) {
+        console.warn('[Security] Removing credentials from URL before opening');
+        parsedUrl.username = '';
+        parsedUrl.password = '';
+      }
+
+      // Validate URL length to prevent potential buffer overflow in native URL handlers
+      const MAX_URL_LENGTH = 2048;
+      if (url.length > MAX_URL_LENGTH) {
+        console.error(`[Security] URL exceeds maximum length (${url.length} > ${MAX_URL_LENGTH})`);
+        return { success: false, error: 'URL is too long to open safely' };
+      }
+
+      await shell.openExternal(parsedUrl.href);
       return { success: true };
     } catch (error) {
       // Check if error is due to invalid URL format

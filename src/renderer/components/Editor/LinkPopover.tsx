@@ -99,9 +99,10 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
       return;
     }
 
-    // Add protocol if missing
+    // Add protocol if missing (normalize to lowercase for consistency)
     let finalUrl = url.trim();
-    if (!ALLOWED_PROTOCOL_REGEX.test(finalUrl)) {
+    const lowerUrl = finalUrl.toLowerCase();
+    if (!ALLOWED_PROTOCOL_REGEX.test(lowerUrl)) {
       finalUrl = 'https://' + finalUrl;
     }
 
