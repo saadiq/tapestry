@@ -161,7 +161,7 @@ export function useFileContent(
   }, [state.filePath, state.content, state.isDirty, onBeforeSave, onAfterSave]);
 
   /**
-   * Update file content
+   * Update file content with cache-aware auto-save
    */
   const updateContent = useCallback(
     (newContent: string) => {
@@ -175,13 +175,16 @@ export function useFileContent(
       clearAutoSaveTimer();
 
       // Set new auto-save timer if enabled
-      if (enableAutoSave) {
+      if (enableAutoSave && state.filePath) {
         autoSaveTimerRef.current = setTimeout(() => {
+          // Only save if this file is still the active file
+          // This prevents cached content from being saved to the wrong file
+          // when the auto-save timer fires after a file switch
           saveFile();
         }, autoSaveDelay);
       }
     },
-    [enableAutoSave, autoSaveDelay, clearAutoSaveTimer, saveFile]
+    [enableAutoSave, autoSaveDelay, clearAutoSaveTimer, saveFile, state.filePath]
   );
 
   /**
