@@ -132,10 +132,6 @@ See [docs/vision.md](docs/vision.md) for the complete vision.
 
 Tapestry is in active development. Contributions are welcome! Please check out the [CLAUDE.md](CLAUDE.md) file for development guidelines and architecture details.
 
-## License
-
-MIT © Saadiq Rodgers-King
-
 ---
 
 **Note**: Tapestry is currently in Milestone 1 (core editing experience). AI features and team collaboration are planned for future releases.
