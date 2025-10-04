@@ -5,6 +5,7 @@ import * as fileHandlers from './fileSystem/fileHandlers';
 import * as directoryHandlers from './fileSystem/directoryHandlers';
 import * as fileWatcher from './fileSystem/fileWatcher';
 import { createApplicationMenu } from './menu/applicationMenu';
+import { ALLOWED_PROTOCOLS } from '../shared/constants';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -50,9 +51,54 @@ const createWindow = () => {
 
 // Register IPC handlers for file system operations
 function registerIpcHandlers() {
-  // Shell operations
-  ipcMain.handle('shell:openExternal', async (_event, url: string) => {
-    await shell.openExternal(url);
+  /**
+   * Validates and opens external URLs safely.
+   * Only allows http, https, and mailto protocols to prevent security exploits
+   * such as file:// disclosure, javascript: execution, or shell command injection.
+   */
+  ipcMain.handle('shell:openExternal', async (_event, url: string): Promise<{success: boolean, error?: string}> => {
+    try {
+      // Validate URL format and parse protocol
+      const parsedUrl = new URL(url);
+
+      // Normalize protocol to lowercase for consistent validation
+      const normalizedProtocol = parsedUrl.protocol.toLowerCase();
+
+      // Whitelist check: only allow http:, https:, and mailto: protocols
+      // Note: file: protocol is intentionally blocked to prevent local file disclosure attacks
+      // Note: javascript: and data: are also blocked by this whitelist approach
+      if (!ALLOWED_PROTOCOLS.includes(normalizedProtocol)) {
+        console.error(`[Security] Blocked attempt to open URL with disallowed protocol: ${normalizedProtocol}`);
+        return { success: false, error: 'Only http://, https://, and mailto: links can be opened' };
+      }
+
+      // Security: Remove credentials from URL to prevent leaking sensitive information
+      if (parsedUrl.username || parsedUrl.password) {
+        console.warn('[Security] Removing credentials from URL before opening');
+        parsedUrl.username = '';
+        parsedUrl.password = '';
+      }
+
+      // Validate URL length to prevent potential buffer overflow in native URL handlers
+      // Check the final URL after credential removal
+      const MAX_URL_LENGTH = 2048;
+      if (parsedUrl.href.length > MAX_URL_LENGTH) {
+        console.error(`[Security] URL exceeds maximum length (${parsedUrl.href.length} > ${MAX_URL_LENGTH})`);
+        return { success: false, error: 'URL is too long to open safely' };
+      }
+
+      await shell.openExternal(parsedUrl.href);
+      return { success: true };
+    } catch (error) {
+      // Check if error is due to invalid URL format
+      if (error instanceof TypeError) {
+        console.error('[shell:openExternal] Invalid URL format:', url);
+        return { success: false, error: 'Invalid URL format. Please check the link.' };
+      }
+
+      console.error('[shell:openExternal] Unexpected error opening URL:', error);
+      return { success: false, error: 'Unable to open link. Please try again.' };
+    }
   });
 
   // File operations
