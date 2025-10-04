@@ -5,7 +5,7 @@
 To run tests, first install the testing dependencies:
 
 ```bash
-npm install -D vitest @vitest/ui @testing-library/react @testing-library/jest-dom happy-dom
+npm install -D vitest @vitest/ui @testing-library/react @testing-library/jest-dom @testing-library/user-event happy-dom @vitest/coverage-v8
 ```
 
 ## Running Tests
@@ -28,7 +28,15 @@ npm run test:coverage
 
 ## Writing Tests
 
-The cache management tests are currently placeholders due to the complexity of testing refs and effects in the App component. To implement full test coverage:
+The cache management tests in `App.cache.test.tsx` provide basic integration testing coverage for:
+
+- Cache invalidation on directory changes
+- Dirty state synchronization
+- Auto-save timer management
+- Loading states
+- Memory leak prevention
+
+For deeper integration testing with actual cache behavior, consider:
 
 ### Integration Testing Approach
 

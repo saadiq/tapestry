@@ -409,6 +409,15 @@ function AppContent() {
     };
   }, [fileContent.isDirty]);
 
+  // Clean up save timeout on component unmount (Fix: memory leak)
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Listen for file system changes with proper handling of active file modifications
   useEffect(() => {
     if (!rootPath) return;
