@@ -5,10 +5,9 @@
 /**
  * Regex pattern to detect URLs with allowed protocols (http, https, mailto).
  * Used for validation in both main and renderer processes.
- * Note: Case-sensitive to prevent malformed URLs (e.g., "HTTPS://example.com"
- * should not be treated as valid, as it would become "https://HTTPS://example.com")
+ * Case-insensitive to handle URLs like "HTTP://example.com" or "HTTPS://example.com"
  */
-export const ALLOWED_PROTOCOL_REGEX = /^(https?|mailto):/;
+export const ALLOWED_PROTOCOL_REGEX = /^(https?|mailto):/i;
 
 /**
  * List of allowed URL protocols for external links.

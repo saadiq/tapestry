@@ -19,7 +19,7 @@ const POPOVER_HEIGHT_ESTIMATE = 200;
 
 export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
   const [url, setUrl] = useState('');
-  const [currentLink, setCurrentLink] = useState('');
+  const [initialLink, setInitialLink] = useState('');
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -32,7 +32,7 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
     const linkAttrs = editor.getAttributes('link');
     const href = linkAttrs.href || '';
     setUrl(href);
-    setCurrentLink(href);
+    setInitialLink(href);
   }, [editor, isOpen]);
 
   // Calculate position based on selection with viewport boundary detection and focus management
@@ -99,10 +99,9 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
       return;
     }
 
-    // Add protocol if missing (normalize to lowercase for consistency)
+    // Add protocol if missing
     let finalUrl = url.trim();
-    const lowerUrl = finalUrl.toLowerCase();
-    if (!ALLOWED_PROTOCOL_REGEX.test(lowerUrl)) {
+    if (!ALLOWED_PROTOCOL_REGEX.test(finalUrl)) {
       finalUrl = 'https://' + finalUrl;
     }
 
@@ -122,8 +121,8 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
   };
 
   const handleOpenLink = async () => {
-    if (currentLink) {
-      const result = await window.electronAPI.openExternal(currentLink);
+    if (initialLink) {
+      const result = await window.electronAPI.openExternal(initialLink);
       if (!result.success) {
         showError(result.error || 'Failed to open link');
       }
@@ -153,7 +152,7 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
         </div>
 
         <div className="flex gap-2 justify-end">
-          {currentLink && (
+          {initialLink && (
             <>
               <button
                 type="button"
@@ -185,7 +184,7 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
             className="btn btn-sm btn-primary"
             disabled={!url.trim()}
           >
-            {currentLink ? 'Update' : 'Set Link'}
+            {initialLink ? 'Update' : 'Set Link'}
           </button>
         </div>
       </form>

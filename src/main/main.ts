@@ -61,11 +61,14 @@ function registerIpcHandlers() {
       // Validate URL format and parse protocol
       const parsedUrl = new URL(url);
 
+      // Normalize protocol to lowercase for consistent validation
+      const normalizedProtocol = parsedUrl.protocol.toLowerCase();
+
       // Whitelist check: only allow http:, https:, and mailto: protocols
       // Note: file: protocol is intentionally blocked to prevent local file disclosure attacks
       // Note: javascript: and data: are also blocked by this whitelist approach
-      if (!ALLOWED_PROTOCOLS.includes(parsedUrl.protocol)) {
-        console.error(`[Security] Blocked attempt to open URL with disallowed protocol: ${parsedUrl.protocol}`);
+      if (!ALLOWED_PROTOCOLS.includes(normalizedProtocol)) {
+        console.error(`[Security] Blocked attempt to open URL with disallowed protocol: ${normalizedProtocol}`);
         return { success: false, error: 'Only http://, https://, and mailto: links can be opened' };
       }
 
@@ -77,9 +80,10 @@ function registerIpcHandlers() {
       }
 
       // Validate URL length to prevent potential buffer overflow in native URL handlers
+      // Check the final URL after credential removal
       const MAX_URL_LENGTH = 2048;
-      if (url.length > MAX_URL_LENGTH) {
-        console.error(`[Security] URL exceeds maximum length (${url.length} > ${MAX_URL_LENGTH})`);
+      if (parsedUrl.href.length > MAX_URL_LENGTH) {
+        console.error(`[Security] URL exceeds maximum length (${parsedUrl.href.length} > ${MAX_URL_LENGTH})`);
         return { success: false, error: 'URL is too long to open safely' };
       }
 
