@@ -49,6 +49,7 @@ export const useEditor = ({
           keepMarks: true,
           keepAttributes: false,
         },
+        link: false, // Disable StarterKit's Link to use custom configuration
       }),
       Typography,
       Placeholder.configure({
