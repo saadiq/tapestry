@@ -65,6 +65,21 @@ export function FileTreeProvider({ children }: FileTreeProviderProps) {
     []
   );
 
+  // Helper to collect all file paths from nodes
+  const collectAllFilePaths = useCallback((nodes: FileNode[]): Set<string> => {
+    const paths = new Set<string>();
+    const traverse = (nodeList: FileNode[]) => {
+      for (const node of nodeList) {
+        paths.add(node.path);
+        if (node.children) {
+          traverse(node.children);
+        }
+      }
+    };
+    traverse(nodes);
+    return paths;
+  }, []);
+
   // Load directory structure
   const loadDirectory = useCallback(async (path: string) => {
     // Capture current expanded paths before setting loading state
@@ -81,12 +96,23 @@ export function FileTreeProvider({ children }: FileTreeProviderProps) {
       // Transform with preserved expansion state
       const nodes = transformDirectoryEntriesToFileNodes(entries, path, expandedPaths);
 
-      setState((prev) => ({
-        ...prev,
-        rootPath: path,
-        nodes,
-        isLoading: false,
-      }));
+      // Collect all valid file paths from the new tree
+      const validPaths = collectAllFilePaths(nodes);
+
+      setState((prev) => {
+        // Clean up dirty paths - remove any that no longer exist
+        const cleanedDirtyPaths = new Set(
+          Array.from(prev.dirtyPaths).filter(dirtyPath => validPaths.has(dirtyPath))
+        );
+
+        return {
+          ...prev,
+          rootPath: path,
+          nodes,
+          dirtyPaths: cleanedDirtyPaths,
+          isLoading: false,
+        };
+      });
     } catch (error) {
       setState((prev) => ({
         ...prev,
@@ -94,7 +120,7 @@ export function FileTreeProvider({ children }: FileTreeProviderProps) {
         error: error instanceof Error ? error.message : 'Failed to load directory',
       }));
     }
-  }, [transformDirectoryEntriesToFileNodes]);
+  }, [transformDirectoryEntriesToFileNodes, collectAllFilePaths]);
 
   // Toggle directory expansion
   const toggleExpand = useCallback((path: string) => {

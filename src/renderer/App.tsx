@@ -20,6 +20,9 @@ interface FileContentCache {
   isDirty: boolean;
 }
 
+// Maximum number of files to keep in cache
+const MAX_CACHE_SIZE = 10;
+
 // Inner component that has access to FileTreeContext and Toast
 function AppContent() {
   const { theme, toggleTheme } = useTheme();
@@ -83,13 +86,26 @@ function AppContent() {
     const loadFileWithCache = async () => {
       if (!activePath) return;
 
-      // Save current file to cache before switching
+      // Save current file to cache before switching (capture synchronously to avoid race)
       const previousPath = lastLoadedPathRef.current;
       if (previousPath && previousPath !== activePath) {
+        // Capture current state immediately before any async operations
+        const currentContent = fileContent.content;
+        const currentOriginalContent = fileContent.originalContent;
+        const currentIsDirty = fileContent.isDirty;
+
+        // Implement LRU eviction: if cache is at max size, remove oldest entry
+        if (fileContentCacheRef.current.size >= MAX_CACHE_SIZE) {
+          const firstKey = fileContentCacheRef.current.keys().next().value;
+          if (firstKey) {
+            fileContentCacheRef.current.delete(firstKey);
+          }
+        }
+
         fileContentCacheRef.current.set(previousPath, {
-          content: fileContent.content,
-          originalContent: fileContent.originalContent,
-          isDirty: fileContent.isDirty,
+          content: currentContent,
+          originalContent: currentOriginalContent,
+          isDirty: currentIsDirty,
         });
       }
 
@@ -97,7 +113,9 @@ function AppContent() {
       const cached = fileContentCacheRef.current.get(activePath);
 
       if (cached) {
-        // Restore from cache
+        // Restore from cache - load file first to trigger proper initialization
+        await fileContent.loadFile(activePath);
+        // Then immediately restore cached content (which may have unsaved changes)
         fileContent.updateContent(cached.content);
         fileContent.updateOriginalContent(cached.originalContent);
       } else {
@@ -130,6 +148,11 @@ function AppContent() {
       setFileDirty(activePath, fileContent.isDirty);
     }
   }, [activePath, fileContent.isDirty, setFileDirty]);
+
+  // Clear cache and dirty paths when rootPath changes
+  useEffect(() => {
+    fileContentCacheRef.current.clear();
+  }, [rootPath]);
 
   const handleUpdate = useCallback((newContent: string) => {
     // Use ref to get latest updateContent function, avoiding stale closure
@@ -208,6 +231,8 @@ function AppContent() {
   const handleOpenFolder = useCallback(async () => {
     const result = await fileSystemService.openDirectory();
     if (result.success && result.path) {
+      // Clear cache when switching directories
+      fileContentCacheRef.current.clear();
       await loadDirectory(result.path);
       // Watch directory for changes
       await fileSystemService.watchDirectory(result.path);
