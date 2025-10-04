@@ -51,20 +51,20 @@ const createWindow = () => {
 // Register IPC handlers for file system operations
 function registerIpcHandlers() {
   // Shell operations
-  ipcMain.handle('shell:openExternal', async (_event, url: string) => {
+  ipcMain.handle('shell:openExternal', async (_event, url: string): Promise<{success: boolean, error?: string}> => {
     // Validate URL to prevent security exploits
     try {
       const parsedUrl = new URL(url);
       const allowedProtocols = ['http:', 'https:', 'mailto:'];
 
       if (!allowedProtocols.includes(parsedUrl.protocol)) {
-        console.error(`Blocked attempt to open unsafe protocol: ${parsedUrl.protocol}`);
-        return;
+        return { success: false, error: `Protocol ${parsedUrl.protocol} not allowed` };
       }
 
       await shell.openExternal(url);
+      return { success: true };
     } catch (error) {
-      console.error('Invalid URL provided to openExternal:', error);
+      return { success: false, error: 'Invalid URL' };
     }
   });
 

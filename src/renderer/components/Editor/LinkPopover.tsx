@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Editor } from '@tiptap/react';
 import { Link as LinkIcon, ExternalLink, Trash2 } from 'lucide-react';
+import { useToast } from '../Notifications/ToastContainer';
 
 interface LinkPopoverProps {
   editor: Editor | null;
@@ -21,6 +22,7 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const { showError } = useToast();
 
   // Get current link URL if cursor is on a link
   useEffect(() => {
@@ -116,9 +118,12 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
     onClose();
   };
 
-  const handleOpenLink = () => {
+  const handleOpenLink = async () => {
     if (currentLink) {
-      window.electronAPI.openExternal(currentLink);
+      const result = await window.electronAPI.openExternal(currentLink);
+      if (!result.success) {
+        showError(result.error || 'Failed to open link');
+      }
     }
   };
 
