@@ -194,6 +194,9 @@ export function useFileContent(
           // Only save if still on the same file (prevents saving cached content to wrong file)
           if (currentFilePathRef.current === capturedPath) {
             saveFile(capturedPath); // Pass captured path to ensure we save to the right file
+          } else {
+            // Log when auto-save is skipped due to file switch (Fix #2: Silent Skip)
+            console.log('[AutoSave] Skipped auto-save for', capturedPath, '- user switched to', currentFilePathRef.current);
           }
         }, autoSaveDelay);
       }

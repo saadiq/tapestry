@@ -94,6 +94,13 @@ function AppContent() {
       isSavingRef.current = false;
       saveTimeoutRef.current = null;
 
+      // Clear cache entry after successful save (Fix #1: Memory Leak)
+      // This handles both auto-save and manual save
+      if (success && activePathRef.current) {
+        fileContentCacheRef.current.delete(activePathRef.current);
+        setFileDirty(activePathRef.current, false);
+      }
+
       // Process queued file watcher events (Fix #3)
       const events = pendingFileEventsRef.current;
       pendingFileEventsRef.current = [];
@@ -106,7 +113,7 @@ function AppContent() {
         });
       }
     }, 1000);
-  }, []);
+  }, [setFileDirty]);
 
   // Extract auto-save delay to constant (Fix #9)
   const AUTO_SAVE_DELAY_MS = 1000;
