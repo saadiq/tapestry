@@ -66,6 +66,9 @@ function AppContent() {
   const isSavingRef = useRef(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Queue for file watcher events during save window (Fix #3)
+  const pendingFileEventsRef = useRef<FileWatcherEvent[]>([]);
+
   // Track last loaded file path to prevent redundant reloads
   const lastLoadedPathRef = useRef<string | null>(null);
 
@@ -92,11 +95,26 @@ function AppContent() {
     }
   }, []);
 
+  // Store file change handler in ref so we can call it for queued events (Fix #3)
+  const handleFileChangeRef = useRef<((event: FileWatcherEvent | undefined) => Promise<void>) | null>(null);
+
   const handleAfterSave = useCallback((success: boolean) => {
     // Keep isSaving true for 1000ms after save to ignore delayed file watcher events
     saveTimeoutRef.current = setTimeout(() => {
       isSavingRef.current = false;
       saveTimeoutRef.current = null;
+
+      // Process queued file watcher events (Fix #3)
+      const events = pendingFileEventsRef.current;
+      pendingFileEventsRef.current = [];
+
+      // Process each queued event using the stored handler
+      if (events.length > 0 && handleFileChangeRef.current) {
+        console.log(`[FileWatcher] Processing ${events.length} queued event(s)`);
+        events.forEach((event) => {
+          handleFileChangeRef.current?.(event);
+        });
+      }
     }, 1000);
   }, []);
 
@@ -133,10 +151,11 @@ function AppContent() {
         // Save current file to cache before switching (capture synchronously to avoid race condition)
         const previousPath = lastLoadedPathRef.current;
         if (previousPath && previousPath !== activePath) {
-          // Capture current state immediately before any async operations
-          const currentContent = fileContent.content;
-          const currentOriginalContent = fileContent.originalContent;
-          const currentIsDirty = fileContent.isDirty;
+          // Capture current state immediately before any async operations (Fix #1: use getCurrentState)
+          const currentState = fileContent.getCurrentState();
+          const currentContent = currentState.content;
+          const currentOriginalContent = currentState.originalContent;
+          const currentIsDirty = currentState.isDirty;
 
           // Implement true LRU eviction: if cache is at max size, remove least recently used entry
           if (fileContentCacheRef.current.size >= MAX_CACHE_SIZE) {
@@ -424,9 +443,12 @@ function AppContent() {
 
     // Create stable handler function using current rootPath
     const handleFileChange = async (event: FileWatcherEvent | undefined) => {
-      // Ignore file watcher events if we're currently saving (prevents reload from our own saves)
+      // Queue file watcher events during save window instead of dropping them (Fix #3)
       if (isSavingRef.current) {
-        console.log('[FileWatcher] Ignoring file change event during save operation');
+        console.log('[FileWatcher] Queueing file change event during save operation');
+        if (event) {
+          pendingFileEventsRef.current.push(event);
+        }
         return;
       }
 
@@ -460,6 +482,9 @@ function AppContent() {
       console.log('[FileWatcher] Reloading directory due to external file change');
       await loadDirectory(rootPath);
     };
+
+    // Store handler in ref for queued event processing (Fix #3)
+    handleFileChangeRef.current = handleFileChange;
 
     // Set up file watcher listener
     if (window.electronAPI?.fileSystem?.onFileChange) {

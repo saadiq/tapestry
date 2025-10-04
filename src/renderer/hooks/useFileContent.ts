@@ -27,7 +27,7 @@ interface UseFileContentOptions {
 interface UseFileContentReturn extends UseFileContentState {
   // File operations
   loadFile: (filePath: string) => Promise<void>;
-  saveFile: () => Promise<boolean>;
+  saveFile: (pathOverride?: string) => Promise<boolean>;
   updateContent: (newContent: string) => void;
   updateOriginalContent: (content: string) => void;
   closeFile: () => void;
@@ -35,6 +35,7 @@ interface UseFileContentReturn extends UseFileContentState {
   // State management
   clearError: () => void;
   clearAutoSaveTimer: () => void;
+  getCurrentState: () => UseFileContentState;
 }
 
 /**
@@ -67,6 +68,10 @@ export function useFileContent(
   // Track current file path to avoid stale closure issues in auto-save
   const currentFilePathRef = useRef<string | null>(state.filePath);
   currentFilePathRef.current = state.filePath;
+
+  // Track current state to avoid stale closure issues (Fix #1)
+  const stateRef = useRef<UseFileContentState>(state);
+  stateRef.current = state;
 
   /**
    * Clear auto-save timer
@@ -107,10 +112,12 @@ export function useFileContent(
   }, []);
 
   /**
-   * Save file content
+   * Save file content (Fix #2: Accept path override for auto-save validation)
    */
-  const saveFile = useCallback(async (): Promise<boolean> => {
-    if (!state.filePath) {
+  const saveFile = useCallback(async (pathOverride?: string): Promise<boolean> => {
+    const filePath = pathOverride || state.filePath;
+
+    if (!filePath) {
       setState((prev) => ({
         ...prev,
         error: 'No file is currently open',
@@ -132,7 +139,7 @@ export function useFileContent(
 
     try {
       const result = await fileSystemService.writeFile(
-        state.filePath,
+        filePath,
         state.content
       );
 
@@ -181,12 +188,12 @@ export function useFileContent(
 
       // Set new auto-save timer if enabled
       if (enableAutoSave && currentFilePathRef.current) {
-        // Capture the file path when setting the timer to validate before saving
+        // Capture the file path when setting the timer to validate before saving (Fix #2)
         const capturedPath = currentFilePathRef.current;
         autoSaveTimerRef.current = setTimeout(() => {
           // Only save if still on the same file (prevents saving cached content to wrong file)
           if (currentFilePathRef.current === capturedPath) {
-            saveFile();
+            saveFile(capturedPath); // Pass captured path to ensure we save to the right file
           }
         }, autoSaveDelay);
       }
@@ -231,6 +238,13 @@ export function useFileContent(
   }, []);
 
   /**
+   * Get current state (Fix #1: Avoid stale closures in async callbacks)
+   */
+  const getCurrentState = useCallback(() => {
+    return stateRef.current;
+  }, []);
+
+  /**
    * Clean up auto-save timer on unmount
    */
   useEffect(() => {
@@ -248,5 +262,6 @@ export function useFileContent(
     closeFile,
     clearError,
     clearAutoSaveTimer,
+    getCurrentState,
   };
 }
