@@ -5,6 +5,7 @@ import * as fileHandlers from './fileSystem/fileHandlers';
 import * as directoryHandlers from './fileSystem/directoryHandlers';
 import * as fileWatcher from './fileSystem/fileWatcher';
 import { createApplicationMenu } from './menu/applicationMenu';
+import { ALLOWED_PROTOCOLS } from '../shared/constants';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -57,31 +58,28 @@ function registerIpcHandlers() {
    */
   ipcMain.handle('shell:openExternal', async (_event, url: string): Promise<{success: boolean, error?: string}> => {
     try {
-      // Validate URL format
+      // Validate URL format and parse protocol
       const parsedUrl = new URL(url);
 
-      // Whitelist of allowed protocols
+      // Whitelist check: only allow http:, https:, and mailto: protocols
       // Note: file: protocol is intentionally blocked to prevent local file disclosure attacks
-      const allowedProtocols = ['http:', 'https:', 'mailto:'];
-
-      // Check for disallowed protocols (including javascript: and data:)
-      if (!allowedProtocols.includes(parsedUrl.protocol)) {
+      // Note: javascript: and data: are also blocked by this whitelist approach
+      if (!ALLOWED_PROTOCOLS.includes(parsedUrl.protocol)) {
         console.error(`[Security] Blocked attempt to open URL with disallowed protocol: ${parsedUrl.protocol}`);
-        return { success: false, error: 'This type of link cannot be opened for security reasons' };
-      }
-
-      // Additional check for javascript: or data: protocols in the URL string
-      // (defense in depth in case URL parsing doesn't catch edge cases)
-      if (/^(javascript|data):/i.test(url)) {
-        console.error(`[Security] Blocked attempt to open javascript: or data: URL`);
-        return { success: false, error: 'This type of link cannot be opened for security reasons' };
+        return { success: false, error: 'Only http://, https://, and mailto: links can be opened' };
       }
 
       await shell.openExternal(url);
       return { success: true };
     } catch (error) {
-      console.error('[shell:openExternal] Error opening URL:', error);
-      return { success: false, error: 'Unable to open link. Please check the URL format.' };
+      // Check if error is due to invalid URL format
+      if (error instanceof TypeError) {
+        console.error('[shell:openExternal] Invalid URL format:', url);
+        return { success: false, error: 'Invalid URL format. Please check the link.' };
+      }
+
+      console.error('[shell:openExternal] Unexpected error opening URL:', error);
+      return { success: false, error: 'Unable to open link. Please try again.' };
     }
   });
 

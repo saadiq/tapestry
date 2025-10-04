@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Editor } from '@tiptap/react';
 import { Link as LinkIcon, ExternalLink, Trash2 } from 'lucide-react';
 import { useToast } from '../Notifications/ToastContainer';
+import { ALLOWED_PROTOCOL_REGEX } from '@shared/constants';
 
 interface LinkPopoverProps {
   editor: Editor | null;
@@ -100,7 +101,7 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
 
     // Add protocol if missing
     let finalUrl = url.trim();
-    if (!/^(https?|mailto):/i.test(finalUrl)) {
+    if (!ALLOWED_PROTOCOL_REGEX.test(finalUrl)) {
       finalUrl = 'https://' + finalUrl;
     }
 
