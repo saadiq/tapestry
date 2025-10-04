@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Editor } from '@tiptap/react';
 import { Link as LinkIcon, ExternalLink, Trash2 } from 'lucide-react';
 
@@ -26,15 +27,16 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
   useEffect(() => {
     if (!editor || !isOpen) return;
 
-    const { from } = editor.state.selection;
-    const domNode = editor.view.domAtPos(from);
-    const rect = (domNode.node as Element).getBoundingClientRect?.() ||
-                 editor.view.dom.getBoundingClientRect();
+    const { from, to } = editor.state.selection;
+
+    // Get coordinates from TipTap's coordinate system
+    const start = editor.view.coordsAtPos(from);
+    const end = editor.view.coordsAtPos(to);
 
     // Position popover below the selection
     setPosition({
-      top: rect.bottom + window.scrollY + 8,
-      left: rect.left + window.scrollX,
+      top: Math.max(start.bottom, end.bottom) + 8,
+      left: start.left,
     });
 
     // Focus input after a short delay to ensure it's rendered
@@ -109,7 +111,7 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
     }
   };
 
-  return (
+  return createPortal(
     <div
       ref={popoverRef}
       className="fixed z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg p-3 min-w-80"
@@ -168,6 +170,7 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
           </button>
         </div>
       </form>
-    </div>
+    </div>,
+    document.body
   );
 };
