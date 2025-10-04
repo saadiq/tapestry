@@ -10,22 +10,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Start development server with hot reload
-npm start
+bun start
 
 # Lint code (TypeScript + ESLint)
-npm run lint
+bun run lint
+
+# Run tests
+bun test
+
+# Run tests with UI
+bun test:ui
+
+# Run tests with coverage
+bun test:coverage
 
 # Package application for distribution
-npm package
+bun package
 
 # Create distributable installers
-npm make
+bun make
 
 # Publish application
-npm publish
+bun publish
 ```
 
-**Note:** This project uses npm (not bun) per Electron Forge requirements.
+**Note:** This project uses bun as the package manager. Electron Forge commands work seamlessly with bun.
 
 ## Architecture
 
@@ -82,25 +91,35 @@ File operations are handled in three layers:
 
 ```
 src/renderer/components/
-├── Editor/              # TipTap WYSIWYG editor with formatting toolbar
+├── Editor/              # Dual-mode editor (WYSIWYG/Markdown) with formatting toolbar
+│   ├── EditorComponent.tsx      # Main editor with view mode switching
+│   ├── EditorToolbar.tsx        # Formatting toolbar with view toggle
+│   ├── MarkdownEditor.tsx       # Raw markdown text editor
+│   └── LinkPopover.tsx          # Link insertion popover
 ├── FileTree/            # Virtual scrolling file tree with context menu
 ├── Layout/              # MainLayout, TitleBar, StatusBar, resizable sidebar
 ├── Sidebar/             # Wrapper for FileTree
 ├── EmptyStates/         # NoDirectorySelected, NoFileOpen, LoadingState
 ├── Modals/              # InputModal, ConfirmDialog (reusable)
-└── Notifications/       # Toast system with success/error/info variants
+├── Notifications/       # Toast system with success/error/info variants
+└── ErrorBoundary.tsx    # React error boundary for graceful error handling
 ```
 
 ### TipTap Editor Integration
 
-The editor uses TipTap extensions:
+The editor supports two view modes:
+- **WYSIWYG Mode**: Rich text editing with TipTap
+- **Markdown Mode**: Raw markdown text editor with normalization on blur
+
+TipTap extensions used:
 - `StarterKit` - Basic markdown features (bold, italic, headings, lists, etc.)
 - `Typography` - Smart quotes, en/em dashes
 - `Placeholder` - Empty state text
 - `Link` - Markdown links with auto-detection
 - `Image` - Image embedding
+- `Table` (TableKit) - Resizable tables with proper markdown conversion
 
-Editor state is managed via `useEditor` hook and content flows through `useFileContent` for persistence.
+Editor state is managed via `useEditor` hook (wraps TipTap's `useTipTapEditor`) and content flows through `useFileContent` for persistence. View mode preference is persisted to localStorage.
 
 ### File Watcher Pattern
 
@@ -175,11 +194,14 @@ Theme switching: `useTheme` hook manages DaisyUI theme via `data-theme` attribut
 - **ESLint warnings** - `any` types in error handling are acceptable, other warnings should be addressed
 - **Markdown-only filter** - Directory reading automatically filters for `.md` files
 - **Auto `.md` extension** - File creation automatically appends `.md` if missing
+- **Keyboard shortcuts**:
+  - `Cmd/Ctrl + K` - Open link popover (WYSIWYG mode only)
+  - `Cmd/Ctrl + E` - Toggle inline code (WYSIWYG mode only)
+- **Markdown normalization** - In markdown mode, content is normalized through markdown-it/turndown pipeline on blur to ensure consistency with WYSIWYG mode
 
 ## Known Limitations (Milestone 1)
 
 - Find functionality (Cmd+F) defined but not implemented
-- No testing infrastructure (Vitest not yet configured)
 - Word count calculation is approximate (strips HTML tags)
 - Cursor position tracking is placeholder (always shows 1:1)
 
