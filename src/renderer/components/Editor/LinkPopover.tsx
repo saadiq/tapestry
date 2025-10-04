@@ -9,8 +9,15 @@ interface LinkPopoverProps {
   onClose: () => void;
 }
 
+// Constants for magic numbers
+const POPOVER_OFFSET = 8;
+const FOCUS_DELAY = 50;
+const POPOVER_MIN_WIDTH = 320; // 80 * 4 (min-w-80 in Tailwind)
+const POPOVER_HEIGHT_ESTIMATE = 200;
+
 export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
   const [url, setUrl] = useState('');
+  const [currentLink, setCurrentLink] = useState('');
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -20,10 +27,12 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
     if (!editor || !isOpen) return;
 
     const linkAttrs = editor.getAttributes('link');
-    setUrl(linkAttrs.href || '');
+    const href = linkAttrs.href || '';
+    setUrl(href);
+    setCurrentLink(href);
   }, [editor, isOpen]);
 
-  // Calculate position based on selection
+  // Calculate position based on selection with viewport boundary detection and focus management
   useEffect(() => {
     if (!editor || !isOpen) return;
 
@@ -33,14 +42,18 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
     const start = editor.view.coordsAtPos(from);
     const end = editor.view.coordsAtPos(to);
 
-    // Position popover below the selection
+    // Position popover below the selection with viewport boundary detection
+    const topPosition = Math.max(start.bottom, end.bottom) + POPOVER_OFFSET;
+    const leftPosition = start.left;
+
     setPosition({
-      top: Math.max(start.bottom, end.bottom) + 8,
-      left: start.left,
+      top: Math.min(topPosition, window.innerHeight - POPOVER_HEIGHT_ESTIMATE),
+      left: Math.min(leftPosition, window.innerWidth - POPOVER_MIN_WIDTH),
     });
 
     // Focus input after a short delay to ensure it's rendered
-    setTimeout(() => inputRef.current?.focus(), 50);
+    const timeoutId = setTimeout(() => inputRef.current?.focus(), FOCUS_DELAY);
+    return () => clearTimeout(timeoutId);
   }, [editor, isOpen]);
 
   // Close on outside click
@@ -75,8 +88,6 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
     return null;
   }
 
-  const currentLink = editor.getAttributes('link').href;
-
   const handleSetLink = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -86,7 +97,7 @@ export const LinkPopover = ({ editor, isOpen, onClose }: LinkPopoverProps) => {
 
     // Add protocol if missing
     let finalUrl = url.trim();
-    if (!finalUrl.match(/^https?:\/\//i) && !finalUrl.match(/^mailto:/i)) {
+    if (!/^(https?|mailto):/i.test(finalUrl)) {
       finalUrl = 'https://' + finalUrl;
     }
 
