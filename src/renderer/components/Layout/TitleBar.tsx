@@ -1,11 +1,10 @@
-import { Menu, Save, FolderOpen, FileText, Sun, Moon } from 'lucide-react';
+import { Save, FolderOpen, FileText, Sun, Moon } from 'lucide-react';
 
 interface TitleBarProps {
   currentFile?: string;
   isDirty?: boolean;
   theme?: 'light' | 'dark';
   onToggleTheme?: () => void;
-  onToggleSidebar?: () => void;
   onSave?: () => void;
   onOpenFolder?: () => void;
   onNewFile?: () => void;
@@ -16,23 +15,12 @@ export function TitleBar({
   isDirty = false,
   theme = 'light',
   onToggleTheme,
-  onToggleSidebar,
   onSave,
   onOpenFolder,
   onNewFile
 }: TitleBarProps) {
   return (
     <div className="navbar border-b border-base-300 bg-base-100 px-2">
-      <div className="flex-none">
-        <button
-          className="btn btn-ghost btn-square btn-sm"
-          onClick={onToggleSidebar}
-          title="Toggle Sidebar"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-      </div>
-
       <div className="flex-1">
         <div className="flex items-center gap-2 px-2">
           <span className="text-lg font-semibold">Tapestry</span>
