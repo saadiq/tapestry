@@ -63,6 +63,10 @@ export function useFileContent(
   // Auto-save timer ref
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Track current file path to avoid stale closure issues in auto-save
+  const currentFilePathRef = useRef<string | null>(state.filePath);
+  currentFilePathRef.current = state.filePath;
+
   /**
    * Clear auto-save timer
    */
@@ -175,12 +179,12 @@ export function useFileContent(
       clearAutoSaveTimer();
 
       // Set new auto-save timer if enabled
-      if (enableAutoSave && state.filePath) {
+      if (enableAutoSave && currentFilePathRef.current) {
         // Capture the file path when setting the timer to validate before saving
-        const capturedPath = state.filePath;
+        const capturedPath = currentFilePathRef.current;
         autoSaveTimerRef.current = setTimeout(() => {
           // Only save if still on the same file (prevents saving cached content to wrong file)
-          if (state.filePath === capturedPath) {
+          if (currentFilePathRef.current === capturedPath) {
             saveFile();
           }
         }, autoSaveDelay);

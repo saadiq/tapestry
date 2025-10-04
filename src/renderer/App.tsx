@@ -75,6 +75,16 @@ function AppContent() {
   // Track file switching intent to prevent race conditions
   const switchingFileRef = useRef(false);
 
+  // Use refs for frequently changing values in file watcher to avoid closure issues
+  const activePathRef = useRef(activePath);
+  activePathRef.current = activePath;
+
+  const fileContentRef = useRef(fileContent);
+  fileContentRef.current = fileContent;
+
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+
   // Save lifecycle callbacks to track save state
   const handleBeforeSave = useCallback(() => {
     isSavingRef.current = true;
@@ -163,31 +173,31 @@ function AppContent() {
         const cached = fileContentCacheRef.current.get(activePath);
 
         if (cached) {
-          // Validate cache before restoring - check if file was modified on disk (Fix #6)
+          // Validate cache before restoring - check if file was modified on disk
           try {
-            const diskContent = await fileSystemService.readFile(activePath);
+            const diskResult = await fileSystemService.readFile(activePath);
 
-            if (diskContent.content === cached.originalContent) {
+            if (diskResult.content === cached.originalContent) {
               // File unchanged on disk - safe to restore cached changes
-              await fileContent.loadFile(activePath);
+              // Manually set state to avoid double file read
+              fileContent.updateOriginalContent(diskResult.content);
+              fileContent.updateContent(cached.content);
 
               // Update cached entry's timestamp for true LRU
               fileContentCacheRef.current.set(activePath, {
                 ...cached,
                 timestamp: Date.now(),
               });
-
-              // Restore cached content (which may have unsaved changes)
-              fileContent.updateContent(cached.content);
-              fileContent.updateOriginalContent(cached.originalContent);
             } else {
-              // File changed on disk - invalidate cache and load fresh content
+              // File changed on disk - invalidate cache and use disk content
               console.log('[Cache] File modified on disk, invalidating cache:', activePath);
               fileContentCacheRef.current.delete(activePath);
-              await fileContent.loadFile(activePath);
+              // Use already-read disk content instead of loading again
+              fileContent.updateOriginalContent(diskResult.content);
+              fileContent.updateContent(diskResult.content);
             }
           } catch (error) {
-            // Error reading file for validation - invalidate cache and try loading (Fix #6)
+            // Error reading file for validation - invalidate cache and try loading
             console.error('[Cache] Error validating cache, invalidating:', error);
             fileContentCacheRef.current.delete(activePath);
             toast.showError(`Error validating cached content: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -381,10 +391,14 @@ function AppContent() {
     onFind: handleFind
   });
 
-  // Warn before closing with unsaved changes
+  // Warn before closing with unsaved changes (check both active file and cache)
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (fileContent.isDirty) {
+      // Check if active file is dirty OR if any cached files are dirty
+      const hasUnsavedChanges = fileContent.isDirty ||
+        Array.from(fileContentCacheRef.current.values()).some(entry => entry.isDirty);
+
+      if (hasUnsavedChanges) {
         e.preventDefault();
         e.returnValue = '';
       }
@@ -411,19 +425,21 @@ function AppContent() {
 
       // Handle external file modifications before reloading directory (Fix #4)
       if (event?.path) {
-        // Handle active file being modified externally
-        if (event.path === activePath) {
+        // Handle active file being modified externally (using refs to avoid stale closures)
+        if (event.path === activePathRef.current) {
           console.log('[FileWatcher] Active file modified externally:', event.path);
 
-          if (fileContent.isDirty) {
+          if (fileContentRef.current.isDirty) {
             // User has unsaved changes - show warning in console
             // TODO: Implement conflict dialog for user to choose which version to keep
             console.warn('[FileWatcher] Conflict: Active file has unsaved changes but was modified externally');
-            toast.showError('File was modified externally. Your unsaved changes may conflict.');
+            toastRef.current.showError('File was modified externally. Your unsaved changes may conflict.');
           } else {
             // No unsaved changes - safe to reload
             console.log('[FileWatcher] Reloading active file from disk');
-            await fileContent.loadFile(event.path);
+            await fileContentRef.current.loadFile(event.path);
+            // Clear cache for reloaded file (Fix #4)
+            fileContentCacheRef.current.delete(event.path);
           }
         }
 
@@ -449,8 +465,8 @@ function AppContent() {
         window.electronAPI.fileSystem.removeFileChangeListener(handleFileChange);
       }
     };
-    // Only re-run when rootPath changes, other dependencies are stable or accessed via refs
-  }, [rootPath, loadDirectory, setFileDirty, activePath, fileContent, toast]);
+    // Only re-run when rootPath or stable functions change (refs avoid stale closures)
+  }, [rootPath, loadDirectory, setFileDirty]);
 
   // Listen for menu events from main process
   useEffect(() => {
