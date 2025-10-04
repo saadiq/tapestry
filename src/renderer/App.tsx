@@ -52,6 +52,7 @@ function AppContent() {
     activePath,
     rootPath,
     setFileDirty,
+    nodes,
   } = useFileTreeContext();
   const toast = useToast();
   const [wordCount, setWordCount] = useState(0);
@@ -92,9 +93,12 @@ function AppContent() {
     }, 1000);
   }, []);
 
+  // Extract auto-save delay to constant (Fix #9)
+  const AUTO_SAVE_DELAY_MS = 1000;
+
   const fileContent = useFileContent({
     enableAutoSave: true, // Re-enabled with cache-aware implementation
-    autoSaveDelay: 1000,
+    autoSaveDelay: AUTO_SAVE_DELAY_MS,
     onBeforeSave: handleBeforeSave,
     onAfterSave: handleAfterSave
   });
@@ -159,26 +163,34 @@ function AppContent() {
         const cached = fileContentCacheRef.current.get(activePath);
 
         if (cached) {
-          // Validate cache before restoring - check if file was modified on disk
-          const diskContent = await fileSystemService.readFile(activePath);
+          // Validate cache before restoring - check if file was modified on disk (Fix #6)
+          try {
+            const diskContent = await fileSystemService.readFile(activePath);
 
-          if (diskContent.content === cached.originalContent) {
-            // File unchanged on disk - safe to restore cached changes
-            await fileContent.loadFile(activePath);
+            if (diskContent.content === cached.originalContent) {
+              // File unchanged on disk - safe to restore cached changes
+              await fileContent.loadFile(activePath);
 
-            // Update cached entry's timestamp for true LRU
-            fileContentCacheRef.current.set(activePath, {
-              ...cached,
-              timestamp: Date.now(),
-            });
+              // Update cached entry's timestamp for true LRU
+              fileContentCacheRef.current.set(activePath, {
+                ...cached,
+                timestamp: Date.now(),
+              });
 
-            // Restore cached content (which may have unsaved changes)
-            fileContent.updateContent(cached.content);
-            fileContent.updateOriginalContent(cached.originalContent);
-          } else {
-            // File changed on disk - invalidate cache and load fresh content
-            console.log('[Cache] File modified on disk, invalidating cache:', activePath);
+              // Restore cached content (which may have unsaved changes)
+              fileContent.updateContent(cached.content);
+              fileContent.updateOriginalContent(cached.originalContent);
+            } else {
+              // File changed on disk - invalidate cache and load fresh content
+              console.log('[Cache] File modified on disk, invalidating cache:', activePath);
+              fileContentCacheRef.current.delete(activePath);
+              await fileContent.loadFile(activePath);
+            }
+          } catch (error) {
+            // Error reading file for validation - invalidate cache and try loading (Fix #6)
+            console.error('[Cache] Error validating cache, invalidating:', error);
             fileContentCacheRef.current.delete(activePath);
+            toast.showError(`Error validating cached content: ${error instanceof Error ? error.message : 'Unknown error'}`);
             await fileContent.loadFile(activePath);
           }
         } else {
@@ -187,6 +199,11 @@ function AppContent() {
         }
 
         lastLoadedPathRef.current = activePath;
+      } catch (error) {
+        // Handle errors in file loading (Fix #5)
+        console.error('[FileLoad] Error loading file:', error);
+        toast.showError(`Failed to load file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        // Optionally clear active file to show error state
       } finally {
         // Always clear loading gate, switching flag, and loading state
         loadingFileRef.current = null;
@@ -198,8 +215,8 @@ function AppContent() {
     if (activePath && activePath !== lastLoadedPathRef.current) {
       loadFileWithCache();
     }
-    // Dependencies are intentionally limited to activePath to avoid stale closures and unnecessary re-runs
-    // fileContent methods are accessed via the current render's closure
+    // Only depend on activePath - other dependencies (fileContent, setFileDirty, toast, setIsLoadingFile)
+    // are either accessed via refs or are stable from hooks, avoiding stale closures
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePath]);
 
@@ -219,35 +236,38 @@ function AppContent() {
     }
   }, [activePath, fileContent.isDirty, setFileDirty]);
 
-  // Clear cache and dirty paths when rootPath changes
+  // Clear cache when rootPath changes or directory is closed (Fix #3)
   useEffect(() => {
+    // Clear cache when switching directories or closing directory (rootPath becomes null)
     fileContentCacheRef.current.clear();
   }, [rootPath]);
 
-  // Clean up cache when directory is reloaded (removes deleted files)
-  const cleanupDeletedFilesFromCache = useCallback(() => {
-    if (!rootPath) return;
+  // Clean up cache for deleted files synchronously after directory reload (Fix #2)
+  useEffect(() => {
+    if (!rootPath || nodes.length === 0) return;
 
-    // Get all valid file paths from the file tree
+    // Collect all valid file paths from the current file tree
     const validPaths = new Set<string>();
-    const collectPaths = (node: any) => {
-      if (node.type === 'file') {
+    const collectPaths = (nodeList: typeof nodes) => {
+      for (const node of nodeList) {
         validPaths.add(node.path);
-      }
-      if (node.children) {
-        node.children.forEach(collectPaths);
+        if (node.children) {
+          collectPaths(node.children);
+        }
       }
     };
+    collectPaths(nodes);
 
-    // Note: We'll need to collect paths from the file tree context
-    // For now, we'll invalidate cache entries that are no longer accessible
+    // Remove cache entries for files that no longer exist in the tree
     const cacheEntries = Array.from(fileContentCacheRef.current.keys());
-    cacheEntries.forEach(path => {
-      // Check if file still exists by attempting to read it
-      // This is done asynchronously by the file watcher
-      // For now, we rely on the file watcher to invalidate stale cache entries
-    });
-  }, [rootPath]);
+    for (const path of cacheEntries) {
+      if (!validPaths.has(path)) {
+        console.log('[Cache] Removing deleted file from cache:', path);
+        fileContentCacheRef.current.delete(path);
+        setFileDirty(path, false);
+      }
+    }
+  }, [nodes, rootPath, setFileDirty]);
 
   const handleUpdate = useCallback((newContent: string) => {
     // Use ref to get latest updateContent function, avoiding stale closure
@@ -382,13 +402,14 @@ function AppContent() {
     if (!rootPath) return;
 
     // Create stable handler function using current rootPath
-    const handleFileChange = async (event: FileWatcherEvent) => {
+    const handleFileChange = async (event: FileWatcherEvent | undefined) => {
       // Ignore file watcher events if we're currently saving (prevents reload from our own saves)
       if (isSavingRef.current) {
         console.log('[FileWatcher] Ignoring file change event during save operation');
         return;
       }
 
+      // Handle external file modifications before reloading directory (Fix #4)
       if (event?.path) {
         // Handle active file being modified externally
         if (event.path === activePath) {
@@ -406,30 +427,15 @@ function AppContent() {
           }
         }
 
-        // Clear cache for changed file (invalidate stale cache)
-        if (fileContentCacheRef.current.has(event.path)) {
-          console.log('[FileWatcher] Invalidating cache for externally modified file:', event.path);
-          fileContentCacheRef.current.delete(event.path);
-          setFileDirty(event.path, false);
-        }
+        // Always clear cache and dirty state for externally modified files (Fix #4)
+        // This handles both cached and non-cached files (e.g., files evicted from LRU cache)
+        fileContentCacheRef.current.delete(event.path);
+        setFileDirty(event.path, false);
       }
 
       // Reload directory tree when files change externally
       console.log('[FileWatcher] Reloading directory due to external file change');
       await loadDirectory(rootPath);
-
-      // Clean up cache for deleted files after directory reload
-      const cacheEntries = Array.from(fileContentCacheRef.current.keys());
-      for (const path of cacheEntries) {
-        try {
-          await fileSystemService.readFile(path);
-        } catch {
-          // File no longer exists - remove from cache
-          console.log('[FileWatcher] Removing deleted file from cache:', path);
-          fileContentCacheRef.current.delete(path);
-          setFileDirty(path, false);
-        }
-      }
     };
 
     // Set up file watcher listener

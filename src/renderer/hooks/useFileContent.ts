@@ -176,11 +176,13 @@ export function useFileContent(
 
       // Set new auto-save timer if enabled
       if (enableAutoSave && state.filePath) {
+        // Capture the file path when setting the timer to validate before saving
+        const capturedPath = state.filePath;
         autoSaveTimerRef.current = setTimeout(() => {
-          // Only save if this file is still the active file
-          // This prevents cached content from being saved to the wrong file
-          // when the auto-save timer fires after a file switch
-          saveFile();
+          // Only save if still on the same file (prevents saving cached content to wrong file)
+          if (state.filePath === capturedPath) {
+            saveFile();
+          }
         }, autoSaveDelay);
       }
     },
