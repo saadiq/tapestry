@@ -4,7 +4,7 @@ import { useEditor } from '../../hooks/useEditor';
 import { EditorToolbar } from './EditorToolbar';
 import { LinkPopover } from './LinkPopover';
 import { MarkdownEditor } from './MarkdownEditor';
-import { markdownToJSON, createMarkdownParser, createTurndownService } from '../../utils/markdown';
+import { markdownToJSON } from '../../utils/markdown';
 import type { ViewMode } from '@shared/types/editor';
 
 interface EditorComponentProps {
@@ -66,34 +66,16 @@ export const EditorComponent = ({
     const isInitialLoad = prevViewModeRef.current === viewMode && !prevContentRef.current && content;
 
     if (editor && content && (isViewModeTransition || isInitialLoad || (viewMode === 'wysiwyg' && hasContentChanged))) {
-      // Only normalize when explicitly switching from markdown to WYSIWYG mode
-      // Initial loads and content changes do NOT normalize to preserve original formatting
-      let contentToConvert = content;
-      if (isViewModeTransition && onUpdate && onContentLoaded) {
-        try {
-          const md = createMarkdownParser();
-          const turndown = createTurndownService();
-          const html = md.render(content);
-          const normalizedMarkdown = turndown.turndown(html);
-          // Update the normalized content back to the parent
-          if (normalizedMarkdown !== content) {
-            // Call onContentLoaded to update the original content (prevents dirty state)
-            onContentLoaded(normalizedMarkdown);
-            contentToConvert = normalizedMarkdown;
-          }
-        } catch (error) {
-          console.error('Failed to normalize markdown content during view mode switch:', error);
-        }
-      }
-
       // Convert markdown to TipTap JSON and set in editor
-      const json = markdownToJSON(contentToConvert);
+      // Note: We do NOT normalize here - viewing in WYSIWYG is non-destructive
+      // Normalization only happens when user actually edits (via onUpdate callback in useEditor)
+      const json = markdownToJSON(content);
       editor.commands.setContent(json);
     }
 
     prevViewModeRef.current = viewMode;
     prevContentRef.current = content;
-  }, [viewMode, editor, content, onUpdate, onContentLoaded]);
+  }, [viewMode, editor, content]);
 
   // Toggle view mode
   const toggleViewMode = () => {
