@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { EditorContent } from '@tiptap/react';
 import { useEditor } from '../../hooks/useEditor';
 import { EditorToolbar } from './EditorToolbar';
@@ -41,11 +41,43 @@ export const EditorComponent = ({
   // Track previous content to avoid unnecessary syncs
   const prevContentRef = useRef(content);
 
+  // Track if user has made edits in WYSIWYG mode (reset when content changes from parent)
+  const hasWysiwygEditsRef = useRef(false);
+
+  // Store raw (unnormalized) content for restoration when switching back to markdown
+  const rawContentRef = useRef(content);
+
+  // Create stable callback refs to avoid dependency issues
+  const onUpdateRef = useRef(onUpdate);
+  const onContentLoadedRef = useRef(onContentLoaded);
+
+  useEffect(() => {
+    onUpdateRef.current = onUpdate;
+    onContentLoadedRef.current = onContentLoaded;
+  }, [onUpdate, onContentLoaded]);
+
+  // Create a wrapped onUpdate that tracks WYSIWYG edits
+  const wrappedOnUpdate = useCallback((newContent: string) => {
+    // Track that user made edits in WYSIWYG mode
+    if (viewModeRef.current === 'wysiwyg') {
+      hasWysiwygEditsRef.current = true;
+    }
+    onUpdateRef.current?.(newContent);
+  }, []);
+
+  // Create a wrapped onContentLoaded that is conditional on view mode
+  const wrappedOnContentLoaded = useCallback((convertedContent: string) => {
+    // Only call parent's onContentLoaded when in WYSIWYG mode
+    // This allows normalization to happen when needed
+    if (viewModeRef.current === 'wysiwyg') {
+      onContentLoadedRef.current?.(convertedContent);
+    }
+  }, []);
+
   const editor = useEditor({
     content,
-    onUpdate,
-    // Don't use onContentLoaded - we'll handle normalization ourselves based on view mode
-    onContentLoaded: undefined,
+    onUpdate: wrappedOnUpdate,
+    onContentLoaded: wrappedOnContentLoaded,
     placeholder,
     editable,
     // Force toolbar re-render on selection changes
@@ -57,20 +89,36 @@ export const EditorComponent = ({
     localStorage.setItem('editor-view-mode', viewMode);
   }, [viewMode]);
 
-  // Sync content when in WYSIWYG mode or switching to it
-  // This ensures that changes made in markdown mode are immediately reflected in WYSIWYG mode
-  // Only syncs on actual view mode transitions or content changes to prevent infinite loops
+  // Sync content when switching view modes or when content changes from parent
   useEffect(() => {
-    const isViewModeTransition = viewMode === 'wysiwyg' && prevViewModeRef.current === 'markdown';
+    const isViewModeTransition = viewMode !== prevViewModeRef.current;
     const hasContentChanged = content !== prevContentRef.current;
-    const isInitialLoad = prevViewModeRef.current === viewMode && !prevContentRef.current && content;
 
-    if (editor && content && (isViewModeTransition || isInitialLoad || (viewMode === 'wysiwyg' && hasContentChanged))) {
-      // Convert markdown to TipTap JSON and set in editor
-      // Note: We do NOT normalize here - viewing in WYSIWYG is non-destructive
-      // Normalization only happens when user actually edits (via onUpdate callback in useEditor)
-      const json = markdownToJSON(content);
-      editor.commands.setContent(json);
+    // When content changes from parent, reset edit tracking and store new raw content
+    if (hasContentChanged) {
+      hasWysiwygEditsRef.current = false;
+      rawContentRef.current = content;
+    }
+
+    if (editor && content) {
+      // Switching from markdown → WYSIWYG: always sync to editor
+      if (viewMode === 'wysiwyg' && prevViewModeRef.current === 'markdown') {
+        const json = markdownToJSON(content);
+        editor.commands.setContent(json);
+      }
+      // Switching from WYSIWYG → markdown: restore raw content if no edits were made
+      else if (viewMode === 'markdown' && prevViewModeRef.current === 'wysiwyg') {
+        if (!hasWysiwygEditsRef.current && onUpdateRef.current) {
+          // No edits in WYSIWYG - restore raw unnormalized content
+          onUpdateRef.current(rawContentRef.current);
+        }
+        // If there were edits, keep the current content (it's already normalized)
+      }
+      // Content changed while in WYSIWYG mode: sync to editor
+      else if (viewMode === 'wysiwyg' && hasContentChanged) {
+        const json = markdownToJSON(content);
+        editor.commands.setContent(json);
+      }
     }
 
     prevViewModeRef.current = viewMode;
