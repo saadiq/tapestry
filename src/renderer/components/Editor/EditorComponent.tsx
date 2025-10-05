@@ -66,10 +66,10 @@ export const EditorComponent = ({
     const isInitialLoad = prevViewModeRef.current === viewMode && !prevContentRef.current && content;
 
     if (editor && content && (isViewModeTransition || isInitialLoad || (viewMode === 'wysiwyg' && hasContentChanged))) {
-      // When switching from markdown to WYSIWYG or on initial load in WYSIWYG mode, normalize the content first
-      // This ensures consistent formatting for TipTap
+      // Only normalize when explicitly switching from markdown to WYSIWYG mode
+      // Initial loads and content changes do NOT normalize to preserve original formatting
       let contentToConvert = content;
-      if ((isViewModeTransition || (isInitialLoad && viewMode === 'wysiwyg')) && onUpdate && onContentLoaded) {
+      if (isViewModeTransition && onUpdate && onContentLoaded) {
         try {
           const md = createMarkdownParser();
           const turndown = createTurndownService();
