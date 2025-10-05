@@ -90,3 +90,6 @@ typings/
 
 # Electron-Forge
 out/
+
+# Conductor workspace directories (keep .conductor/setup.sh but ignore workspaces)
+.conductor/*/
