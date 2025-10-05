@@ -64,12 +64,9 @@ export const EditorComponent = ({
     const hasContentChanged = content !== prevContentRef.current;
 
     if (editor && content && (isViewModeTransition || (viewMode === 'wysiwyg' && hasContentChanged))) {
-      // Only update if we're transitioning or content actually changed
-      if (isViewModeTransition || hasContentChanged) {
-        // Convert markdown to TipTap JSON and set in editor
-        const json = markdownToJSON(content);
-        editor.commands.setContent(json);
-      }
+      // Convert markdown to TipTap JSON and set in editor
+      const json = markdownToJSON(content);
+      editor.commands.setContent(json);
     }
 
     prevViewModeRef.current = viewMode;
