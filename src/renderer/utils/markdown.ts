@@ -131,10 +131,35 @@ interface JSONContent {
 }
 
 /**
- * Parse HTML string to extract text content and marks
- * This handles basic inline HTML tags safely
+ * Parse HTML string to TipTap JSON using DOM parser
+ * This handles complex HTML structures safely
  */
 function parseHTMLToJSON(html: string): JSONContent[] {
+  // For simple inline HTML tags that come from markdown-it inline tokens
+  // We'll use a simpler approach since they're already split
+  if (!html.includes('<div') && !html.includes('<p>') && !html.includes('<h')) {
+    return parseSimpleHTMLToJSON(html);
+  }
+
+  // For complex HTML blocks, we need to parse them properly
+  // Check if DOMParser is available (it should be in the renderer process)
+  if (typeof DOMParser !== 'undefined') {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // Convert DOM nodes to TipTap JSON
+    return domNodesToJSON(doc.body.childNodes);
+  } else {
+    // Fallback for Node/test environments - just extract text content
+    // This won't preserve all formatting but is better than nothing
+    return parseSimpleHTMLToJSON(html);
+  }
+}
+
+/**
+ * Parse simple inline HTML tags (for backward compatibility)
+ */
+function parseSimpleHTMLToJSON(html: string): JSONContent[] {
   const result: JSONContent[] = [];
 
   // Basic HTML tag patterns for inline elements
@@ -152,7 +177,6 @@ function parseHTMLToJSON(html: string): JSONContent[] {
 
   // Process HTML string segment by segment
   let remaining = html;
-  let position = 0;
 
   while (remaining.length > 0) {
     let earliestMatch: { index: number; length: number; content: string; mark: string } | null = null;
@@ -218,6 +242,275 @@ function parseHTMLToJSON(html: string): JSONContent[] {
 }
 
 /**
+ * Convert DOM nodes to TipTap JSON format
+ */
+function domNodesToJSON(nodes: NodeListOf<ChildNode>): JSONContent[] {
+  // Check if we're in a browser environment
+  if (typeof Node === 'undefined') {
+    return [];
+  }
+
+  const result: JSONContent[] = [];
+
+  for (const node of Array.from(nodes)) {
+    const jsonNode = domNodeToJSON(node);
+    if (jsonNode) {
+      if (Array.isArray(jsonNode)) {
+        result.push(...jsonNode);
+      } else {
+        result.push(jsonNode);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Convert a single DOM node to TipTap JSON
+ */
+function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
+  // Check if we're in a browser environment
+  if (typeof Node === 'undefined') {
+    return null;
+  }
+
+  // Text nodes
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent || '';
+    if (!text.trim()) return null;
+
+    return {
+      type: 'text',
+      text: text,
+    };
+  }
+
+  // Element nodes
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const element = node as Element;
+    const tagName = element.tagName.toLowerCase();
+
+    // Handle different HTML elements
+    switch (tagName) {
+      case 'p': {
+        const content = domNodesToJSON(element.childNodes);
+        if (content.length === 0) return null;
+        return {
+          type: 'paragraph',
+          content,
+        };
+      }
+
+      case 'h1':
+      case 'h2':
+      case 'h3':
+      case 'h4':
+      case 'h5':
+      case 'h6': {
+        const level = parseInt(tagName.slice(1));
+        const content = domNodesToJSON(element.childNodes);
+        if (content.length === 0) return null;
+        return {
+          type: 'heading',
+          attrs: { level },
+          content,
+        };
+      }
+
+      case 'ul': {
+        const items = Array.from(element.children)
+          .filter(child => child.tagName.toLowerCase() === 'li')
+          .map(li => ({
+            type: 'listItem' as NodeType,
+            content: [
+              {
+                type: 'paragraph' as NodeType,
+                content: domNodesToJSON(li.childNodes),
+              },
+            ],
+          }));
+
+        if (items.length === 0) return null;
+        return {
+          type: 'bulletList',
+          content: items,
+        };
+      }
+
+      case 'ol': {
+        const items = Array.from(element.children)
+          .filter(child => child.tagName.toLowerCase() === 'li')
+          .map(li => ({
+            type: 'listItem' as NodeType,
+            content: [
+              {
+                type: 'paragraph' as NodeType,
+                content: domNodesToJSON(li.childNodes),
+              },
+            ],
+          }));
+
+        if (items.length === 0) return null;
+        return {
+          type: 'orderedList',
+          content: items,
+        };
+      }
+
+      case 'blockquote': {
+        const content = domNodesToJSON(element.childNodes);
+        if (content.length === 0) return null;
+        return {
+          type: 'blockquote',
+          content: content.map(c =>
+            c.type === 'text' ? { type: 'paragraph' as NodeType, content: [c] } : c
+          ),
+        };
+      }
+
+      case 'code': {
+        const text = element.textContent || '';
+        return {
+          type: 'text',
+          text,
+          marks: [{ type: 'code' }],
+        };
+      }
+
+      case 'strong':
+      case 'b': {
+        const content = domNodesToJSON(element.childNodes);
+        return content.map(c => {
+          if (c.type === 'text') {
+            return {
+              ...c,
+              marks: [...(c.marks || []), { type: 'bold' as MarkType }],
+            };
+          }
+          return c;
+        });
+      }
+
+      case 'em':
+      case 'i': {
+        const content = domNodesToJSON(element.childNodes);
+        return content.map(c => {
+          if (c.type === 'text') {
+            return {
+              ...c,
+              marks: [...(c.marks || []), { type: 'italic' as MarkType }],
+            };
+          }
+          return c;
+        });
+      }
+
+      case 's':
+      case 'strike':
+      case 'del': {
+        const content = domNodesToJSON(element.childNodes);
+        return content.map(c => {
+          if (c.type === 'text') {
+            return {
+              ...c,
+              marks: [...(c.marks || []), { type: 'strike' as MarkType }],
+            };
+          }
+          return c;
+        });
+      }
+
+      case 'br': {
+        return {
+          type: 'hardBreak',
+        };
+      }
+
+      case 'hr': {
+        return {
+          type: 'horizontalRule',
+        };
+      }
+
+      case 'a': {
+        const href = element.getAttribute('href') || '';
+        const sanitizedHref = sanitizeLinkUrl(href);
+        if (!sanitizedHref) {
+          // If link is unsafe, just return the text content
+          return domNodesToJSON(element.childNodes);
+        }
+
+        const content = domNodesToJSON(element.childNodes);
+        return content.map(c => {
+          if (c.type === 'text') {
+            return {
+              ...c,
+              marks: [...(c.marks || []), {
+                type: 'link' as MarkType,
+                attrs: { href: sanitizedHref }
+              }],
+            };
+          }
+          return c;
+        });
+      }
+
+      case 'img': {
+        const src = element.getAttribute('src') || '';
+        const sanitizedSrc = sanitizeImageUrl(src);
+        if (!sanitizedSrc) return null;
+
+        const alt = element.getAttribute('alt') || '';
+        return {
+          type: 'image',
+          attrs: {
+            src: sanitizedSrc,
+            alt,
+          },
+        };
+      }
+
+      case 'div':
+      case 'span':
+      case 'details':
+      case 'summary':
+      case 'abbr':
+      case 'sub':
+      case 'sup':
+      case 'kbd':
+      default: {
+        // For unsupported block elements, try to extract their content
+        // Wrap in paragraph if needed
+        const content = domNodesToJSON(element.childNodes);
+        if (content.length === 0) return null;
+
+        // If it's a block-level element and contains only text/inline content,
+        // wrap it in a paragraph
+        if (['div', 'details', 'summary'].includes(tagName)) {
+          const needsParagraph = content.every(c =>
+            c.type === 'text' || c.type === 'hardBreak' ||
+            (c.type === 'image')
+          );
+
+          if (needsParagraph && content.length > 0) {
+            return {
+              type: 'paragraph',
+              content,
+            };
+          }
+        }
+
+        // Otherwise, return the content directly
+        return content;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Convert markdown to TipTap JSON format
  * This bypasses the HTML → DOM parser → TipTap pipeline which causes issues with tables
  * (browser's DOM parser automatically adds tbody/thead which TipTap's schema rejects)
@@ -235,7 +528,12 @@ export const markdownToJSON = (markdown: string): JSONContent => {
   while (i < tokens.length) {
     const node = parseToken(tokens, i);
     if (node.content) {
-      result.content!.push(node.content);
+      // Handle both single nodes and arrays of nodes
+      if (Array.isArray(node.content)) {
+        result.content!.push(...node.content);
+      } else {
+        result.content!.push(node.content);
+      }
       i = node.nextIndex;
     } else {
       i++;
@@ -251,7 +549,7 @@ export const markdownToJSON = (markdown: string): JSONContent => {
 function parseToken(
   tokens: Token[],
   index: number
-): { content: JSONContent | null; nextIndex: number } {
+): { content: JSONContent | JSONContent[] | null; nextIndex: number } {
   const token = tokens[index];
 
   // Handle different token types
@@ -364,19 +662,27 @@ function parseToken(
     }
 
     case 'html_block': {
-      // Parse block-level HTML using the simpler utility
+      // Parse block-level HTML - might return multiple blocks
       const htmlContent = parseHTMLToJSON(token.content);
-      if (htmlContent.length > 0) {
+
+      if (htmlContent.length === 0) {
+        return { content: null, nextIndex: index + 1 };
+      }
+
+      // If single block, return it directly
+      if (htmlContent.length === 1) {
         return {
-          content: {
-            type: 'paragraph',
-            content: htmlContent,
-          },
+          content: htmlContent[0],
           nextIndex: index + 1,
         };
       }
-      // If no content parsed, skip this token
-      return { content: null, nextIndex: index + 1 };
+
+      // If multiple blocks, return them as an array
+      // The caller will handle flattening them
+      return {
+        content: htmlContent,
+        nextIndex: index + 1,
+      };
     }
 
     default:
