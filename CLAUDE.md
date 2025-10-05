@@ -118,6 +118,11 @@ TipTap extensions used:
 - `Link` - Markdown links with auto-detection
 - `Image` - Image embedding
 - `Table` (TableKit) - Resizable tables with proper markdown conversion
+- `CodeBlockLowlight` - Syntax highlighting with highlight.js themes
+
+**Markdown ↔ TipTap Conversion:**
+- **Markdown → TipTap**: Uses `markdownToJSON()` which parses markdown-it tokens directly to TipTap JSON format, bypassing HTML/DOM parsing entirely. This prevents browser DOM parser from injecting tbody/thead elements that TipTap's schema rejects, enabling proper table support.
+- **TipTap → Markdown**: Uses TurndownService with GFM plugin to convert HTML back to markdown.
 
 Editor state is managed via `useEditor` hook (wraps TipTap's `useTipTapEditor`) and content flows through `useFileContent` for persistence. View mode preference is persisted to localStorage.
 
@@ -204,7 +209,6 @@ Theme switching: `useTheme` hook manages DaisyUI theme via `data-theme` attribut
 - Find functionality (Cmd+F) defined but not implemented
 - Word count calculation is approximate (strips HTML tags)
 - Cursor position tracking is placeholder (always shows 1:1)
-- **Table rendering in WYSIWYG mode**: Tables from markdown don't render in WYSIWYG view due to TipTap/ProseMirror limitations with tbody/thead elements added by browser DOM parser. Use Markdown view mode for editing tables.
 
 ## Future Considerations (Milestone 2+)
 
