@@ -135,13 +135,6 @@ interface JSONContent {
  * This handles complex HTML structures safely
  */
 function parseHTMLToJSON(html: string): JSONContent[] {
-  // For simple inline HTML tags that come from markdown-it inline tokens
-  // We'll use a simpler approach since they're already split
-  if (!html.includes('<div') && !html.includes('<p>') && !html.includes('<h')) {
-    return parseSimpleHTMLToJSON(html);
-  }
-
-  // For complex HTML blocks, we need to parse them properly
   // Check if DOMParser is available (it should be in the renderer process)
   if (typeof DOMParser !== 'undefined') {
     const parser = new DOMParser();
@@ -150,8 +143,13 @@ function parseHTMLToJSON(html: string): JSONContent[] {
     // Convert DOM nodes to TipTap JSON
     return domNodesToJSON(doc.body.childNodes);
   } else {
-    // Fallback for Node/test environments - just extract text content
-    // This won't preserve all formatting but is better than nothing
+    // Fallback for Node/test environments - use simple parsing
+    // First check if it's simple inline HTML
+    if (!html.includes('<div') && !html.includes('<p>') && !html.includes('<h')) {
+      return parseSimpleHTMLToJSON(html);
+    }
+
+    // For complex HTML in test environment, just extract text
     return parseSimpleHTMLToJSON(html);
   }
 }
@@ -471,14 +469,22 @@ function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
         };
       }
 
-      case 'div':
+      // Inline elements that should just pass through their content
       case 'span':
-      case 'details':
-      case 'summary':
+      case 'kbd':
       case 'abbr':
       case 'sub':
-      case 'sup':
-      case 'kbd':
+      case 'sup': {
+        // For inline elements, just extract the text content
+        // In the future, we could add custom marks for these
+        const content = domNodesToJSON(element.childNodes);
+        return content;
+      }
+
+      // Block-level elements that we convert to paragraphs
+      case 'div':
+      case 'details':
+      case 'summary':
       default: {
         // For unsupported block elements, try to extract their content
         // Wrap in paragraph if needed
@@ -886,7 +892,24 @@ function parseInlineContent(token: Token): JSONContent[] {
         // Handle HTML tags - they come as separate open/close tokens
         const tagContent = child.content.toLowerCase();
 
-        // Check if it's an opening tag
+        // Handle self-closing <br> or <br/> tags
+        if (tagContent === '<br>' || tagContent === '<br/>' || tagContent === '<br />') {
+          content.push({
+            type: 'hardBreak',
+          });
+          break;
+        }
+
+        // Handle other inline HTML elements that need special treatment
+        // For kbd, span, abbr, sub, sup - we'll just pass them through as text
+        // since TipTap doesn't have native support for them
+        if (tagContent.match(/^<(kbd|span|abbr|sub|sup|details|summary)(\s[^>]*)?>$/)) {
+          // These tags will be handled as text for now
+          // We could potentially add custom marks/nodes for them in the future
+          break;
+        }
+
+        // Check if it's an opening tag for formatting
         if (tagContent.match(/^<(b|strong|i|em|s|strike|del|code|u)>$/)) {
           const tagName = tagContent.slice(1, -1);
 
