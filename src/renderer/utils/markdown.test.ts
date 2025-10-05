@@ -271,6 +271,27 @@ describe('markdown utils', () => {
         expect(json.content![0].content![0].content![0].content![1].marks![0].type).toBe('bold');
         expect(json.content![0].content![1].content![0].content![1].marks![0].type).toBe('italic');
       });
+
+      it('should handle <br> tags as hard breaks', () => {
+        const markdown = 'Line 1<br>Line 2<br/>Line 3';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('paragraph');
+        // Check for hard breaks
+        const content = json.content![0].content;
+        expect(content).toBeDefined();
+        // Should have text and hard breaks
+        expect(content!.some(c => c.type === 'hardBreak')).toBe(true);
+      });
+
+      it('should handle inline HTML elements like span and kbd', () => {
+        const markdown = '<span>span text</span> and <kbd>Ctrl</kbd>';
+        const json = markdownToJSON(markdown);
+
+        // These tags should pass through their text content
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content).toBeDefined();
+      });
     });
 
     describe('complex nested structures', () => {
