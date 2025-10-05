@@ -212,6 +212,11 @@ Horizontal rule
 
 **Note:** HTML support is partial - inline styles, colors, and advanced formatting are not preserved. Complex HTML structures are converted to their closest TipTap equivalent.
 
+**HTML Limitations:**
+- Nested inline tags (e.g., `<b><i>text</i></b>`) extract text but may not perfectly preserve all mark combinations
+- Event handler attributes (onclick, onerror, etc.) are stripped for security
+- Unsupported tags gracefully degrade to text content
+
 ### Markdown Limitations & Best Practices
 
 **Table Limitations:**

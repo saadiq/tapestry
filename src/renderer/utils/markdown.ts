@@ -265,6 +265,27 @@ function domNodesToJSON(nodes: NodeListOf<ChildNode>): JSONContent[] {
 }
 
 /**
+ * Sanitize element attributes to remove dangerous event handlers
+ */
+function sanitizeElementAttributes(element: Element): void {
+  const dangerousAttributes = [
+    'onclick', 'ondblclick', 'onmousedown', 'onmouseup', 'onmouseover',
+    'onmousemove', 'onmouseout', 'onmouseenter', 'onmouseleave',
+    'onload', 'onerror', 'onabort', 'onbeforeunload', 'onunload',
+    'onkeydown', 'onkeyup', 'onkeypress',
+    'onfocus', 'onblur', 'onchange', 'onsubmit', 'onreset',
+    'onscroll', 'onresize', 'oncontextmenu',
+    'ontouchstart', 'ontouchmove', 'ontouchend',
+  ];
+
+  for (const attr of dangerousAttributes) {
+    if (element.hasAttribute(attr)) {
+      element.removeAttribute(attr);
+    }
+  }
+}
+
+/**
  * Convert a single DOM node to TipTap JSON
  */
 function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
@@ -287,6 +308,9 @@ function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
   // Element nodes
   if (node.nodeType === Node.ELEMENT_NODE) {
     const element = node as Element;
+
+    // Sanitize element attributes to remove event handlers
+    sanitizeElementAttributes(element);
     const tagName = element.tagName.toLowerCase();
 
     // Handle different HTML elements
@@ -535,10 +559,13 @@ export const markdownToJSON = (markdown: string): JSONContent => {
     const node = parseToken(tokens, i);
     if (node.content) {
       // Handle both single nodes and arrays of nodes
+      if (!result.content) {
+        result.content = [];
+      }
       if (Array.isArray(node.content)) {
-        result.content!.push(...node.content);
+        result.content.push(...node.content);
       } else {
-        result.content!.push(node.content);
+        result.content.push(node.content);
       }
       i = node.nextIndex;
     } else {

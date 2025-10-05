@@ -248,9 +248,14 @@ describe('markdown utils', () => {
         const markdown = '<b><i>Bold and italic</i></b>';
         const json = markdownToJSON(markdown);
 
-        // Note: Our simple parser doesn't handle nested tags yet
-        // This test documents current behavior
+        // Note: DOM parser should handle nested tags, but the marks might not combine perfectly
+        // This test documents current behavior - at minimum we should get a paragraph with text
         expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content).toBeDefined();
+        expect(json.content![0].content!.length).toBeGreaterThan(0);
+        // The text should be extracted even if marks aren't perfect
+        const hasText = json.content![0].content!.some(c => c.text?.includes('Bold and italic'));
+        expect(hasText).toBe(true);
       });
 
       it('should skip unsupported HTML tags', () => {
@@ -386,6 +391,111 @@ describe('markdown utils', () => {
 
         expect(json.content![0].content![0].marks![0].type).toBe('link');
         expect(json.content![0].content![0].marks![0].attrs?.href).toBe('mailto:test@example.com');
+      });
+    });
+
+    describe('HTML edge cases', () => {
+      it('should handle empty HTML tags', () => {
+        const markdown = '<b></b><i></i><code></code>';
+        const json = markdownToJSON(markdown);
+
+        // Empty tags should not create content
+        expect(json.content).toBeDefined();
+        // Should either have no content or only empty paragraphs
+        if (json.content!.length > 0) {
+          const hasNonEmptyContent = json.content!.some(c =>
+            c.content && c.content.length > 0 && c.content.some(inner => inner.text && inner.text.trim())
+          );
+          expect(hasNonEmptyContent).toBe(false);
+        }
+      });
+
+      it('should handle malformed HTML', () => {
+        const markdown = '<b>unclosed tag';
+        const json = markdownToJSON(markdown);
+
+        // Should still extract the text content
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content).toBeDefined();
+        const hasText = json.content![0].content!.some(c => c.text?.includes('unclosed tag'));
+        expect(hasText).toBe(true);
+      });
+
+      it('should handle mixed case HTML tags', () => {
+        const markdown = '<B>Bold</B> and <I>Italic</I>';
+        const json = markdownToJSON(markdown);
+
+        // Tags should be case-insensitive
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content).toBeDefined();
+        // Should have bold and italic marks
+        const hasBold = json.content![0].content!.some(c =>
+          c.marks?.some(m => m.type === 'bold')
+        );
+        const hasItalic = json.content![0].content!.some(c =>
+          c.marks?.some(m => m.type === 'italic')
+        );
+        expect(hasBold).toBe(true);
+        expect(hasItalic).toBe(true);
+      });
+
+      it('should strip dangerous HTML attributes', () => {
+        const markdown = '<b onclick="alert(1)">Click me</b>';
+        const json = markdownToJSON(markdown);
+
+        // Should extract text but not include the onclick attribute
+        expect(json.content![0].type).toBe('paragraph');
+        const textContent = JSON.stringify(json);
+        expect(textContent).not.toContain('onclick');
+        expect(textContent).not.toContain('alert');
+        // But should still have the text
+        const hasText = json.content![0].content!.some(c => c.text?.includes('Click me'));
+        expect(hasText).toBe(true);
+      });
+
+      it('should handle nested inline HTML tags', () => {
+        const markdown = '<b>Bold with <i>italic inside</i></b>';
+        const json = markdownToJSON(markdown);
+
+        // Should handle nested tags and extract text
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content).toBeDefined();
+        // Should have text content
+        const allText = json.content![0].content!.map(c => c.text || '').join('');
+        expect(allText).toContain('Bold');
+        expect(allText).toContain('italic inside');
+      });
+
+      it('should handle HTML entities', () => {
+        const markdown = '<b>&lt;script&gt;</b>';
+        const json = markdownToJSON(markdown);
+
+        // HTML entities should be decoded
+        expect(json.content![0].type).toBe('paragraph');
+        const hasText = json.content![0].content!.some(c =>
+          c.text?.includes('<script>') || c.text?.includes('&lt;script&gt;')
+        );
+        expect(hasText).toBe(true);
+      });
+
+      it('should handle HTML with attributes', () => {
+        const markdown = '<a href="https://example.com" title="Example">Link</a>';
+        const json = markdownToJSON(markdown);
+
+        // Should extract href and title
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content![0].marks![0].type).toBe('link');
+        expect(json.content![0].content![0].marks![0].attrs?.href).toBe('https://example.com');
+      });
+
+      it('should handle self-closing br tags with various formats', () => {
+        const markdown = 'Line 1<br>Line 2<br/>Line 3<br />Line 4';
+        const json = markdownToJSON(markdown);
+
+        // Should have hard breaks for all formats
+        expect(json.content![0].type).toBe('paragraph');
+        const hardBreaks = json.content![0].content!.filter(c => c.type === 'hardBreak');
+        expect(hardBreaks.length).toBeGreaterThanOrEqual(3);
       });
     });
   });

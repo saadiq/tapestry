@@ -36,6 +36,7 @@ Tapestry solves this by providing a flexible, desktop-first workspace where you 
 - **Syntax highlighting**: Code blocks with language detection
 - **Partial HTML support**: Basic formatting tags (`<b>`, `<i>`, `<code>`, etc.) and block elements (`<div>`, `<p>`, etc.)
   - *Note: HTML support is partial - inline styles and advanced formatting are not preserved*
+  - *Limitations: Nested inline tags may not perfectly preserve all mark combinations; event handlers are stripped for security*
 
 ### Modern Desktop Experience
 - **Native file dialogs**: Works like a desktop app should
