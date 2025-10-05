@@ -204,6 +204,7 @@ Theme switching: `useTheme` hook manages DaisyUI theme via `data-theme` attribut
 - Find functionality (Cmd+F) defined but not implemented
 - Word count calculation is approximate (strips HTML tags)
 - Cursor position tracking is placeholder (always shows 1:1)
+- **Table rendering in WYSIWYG mode**: Tables from markdown don't render in WYSIWYG view due to TipTap/ProseMirror limitations with tbody/thead elements added by browser DOM parser. Use Markdown view mode for editing tables.
 
 ## Future Considerations (Milestone 2+)
 

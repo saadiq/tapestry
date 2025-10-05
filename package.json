@@ -55,6 +55,7 @@
     "@tailwindcss/typography": "^0.5.19",
     "@tailwindcss/vite": "^4.1.14",
     "@tanstack/react-virtual": "^3.13.12",
+    "@tiptap/extension-code-block-lowlight": "^3.6.5",
     "@tiptap/extension-image": "^3.6.3",
     "@tiptap/extension-link": "^3.6.3",
     "@tiptap/extension-placeholder": "^3.6.3",
@@ -66,10 +67,12 @@
     "@tiptap/react": "^3.6.3",
     "@tiptap/starter-kit": "^3.6.3",
     "electron-squirrel-startup": "^1.0.1",
+    "lowlight": "^3.3.0",
     "lucide-react": "^0.544.0",
     "markdown-it": "^14.1.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "turndown": "^7.2.1"
+    "turndown": "^7.2.1",
+    "turndown-plugin-gfm": "^1.0.2"
   }
 }

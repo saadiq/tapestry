@@ -1,6 +1,9 @@
 @import 'tailwindcss';
 @plugin 'daisyui';
 
+/* Highlight.js theme for syntax highlighting */
+@import 'highlight.js/styles/github-dark.css';
+
 body {
   margin: 0;
   padding: 0;
