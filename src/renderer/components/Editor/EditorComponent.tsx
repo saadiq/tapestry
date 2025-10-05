@@ -4,7 +4,7 @@ import { useEditor } from '../../hooks/useEditor';
 import { EditorToolbar } from './EditorToolbar';
 import { LinkPopover } from './LinkPopover';
 import { MarkdownEditor } from './MarkdownEditor';
-import { createMarkdownParser } from '../../utils/markdown';
+import { markdownToJSON } from '../../utils/markdown';
 import type { ViewMode } from '@shared/types/editor';
 
 interface EditorComponentProps {
@@ -38,9 +38,6 @@ export const EditorComponent = ({
   // Track previous view mode to detect transitions
   const prevViewModeRef = useRef(viewMode);
 
-  // Create markdown-it instance for content conversion
-  const md = useRef(createMarkdownParser());
-
   const editor = useEditor({
     content,
     onUpdate,
@@ -66,12 +63,14 @@ export const EditorComponent = ({
       editor &&
       content
     ) {
-      // Convert markdown to HTML and set in editor
-      const html = md.current.render(content);
-      editor.commands.setContent(html);
+      // Convert markdown to TipTap JSON and set in editor
+      const json = markdownToJSON(content);
+      editor.commands.setContent(json);
     }
     prevViewModeRef.current = viewMode;
-  }, [viewMode, editor, content]);
+    // Only trigger on viewMode changes, not content changes (content would cause infinite loop)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, editor]);
 
   // Toggle view mode
   const toggleViewMode = () => {
