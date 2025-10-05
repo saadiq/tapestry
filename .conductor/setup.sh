@@ -14,11 +14,7 @@ echo "✅ Bun found: $(bun --version)"
 
 # Install dependencies
 echo "📦 Installing dependencies..."
-bun install
-
-# Verify installation
-echo "🔍 Verifying installation..."
-if [ ! -d "node_modules" ]; then
+if ! bun install; then
     echo "❌ Dependencies installation failed"
     exit 1
 fi
@@ -33,3 +29,4 @@ echo "   bun test:coverage  - Run tests with coverage"
 echo "   bun run lint       - Lint code"
 echo "   bun package        - Package application"
 echo "   bun make           - Create distributable installers"
+echo "   bun publish        - Publish application"
