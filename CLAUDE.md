@@ -36,6 +36,17 @@ bun publish
 
 **Note:** This project uses bun as the package manager. Electron Forge commands work seamlessly with bun.
 
+### Test Runner Configuration
+
+This project uses **bun's test runner** (not vitest or jest) for all tests. Key configuration details:
+
+- **DOM Environment**: Tests requiring DOM use `@happy-dom/global-registrator` for happy-dom setup
+- **Test Matchers**: jest-dom matchers are manually extended to bun:test's expect function
+- **Preload Files**: `bunfig.toml` preloads `happydom.ts` and `testing-library.ts` before tests run
+- **Important**: The `@vitest-environment` directive does NOT work with bun test runner
+
+Test files should import from `vitest` for compatibility with IDE tooling, but tests execute via `bun test`.
+
 ## Architecture
 
 ### Process Model

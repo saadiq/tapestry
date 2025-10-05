@@ -1,2 +1,5 @@
 [test]
+# Preload DOM environment and testing library matchers for all tests
+# - happydom.ts: Registers happy-dom globals required by bun test runner
+# - testing-library.ts: Extends bun:test's expect with jest-dom matchers
 preload = ["./happydom.ts", "./testing-library.ts"]
