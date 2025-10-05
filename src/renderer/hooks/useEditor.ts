@@ -100,11 +100,9 @@ export const useEditor = ({
         },
       }),
       TableKit.configure({
-        table: {
-          resizable: true,
-          HTMLAttributes: {
-            class: 'table',
-          },
+        resizable: true,
+        HTMLAttributes: {
+          class: 'table',
         },
       }),
     ],
