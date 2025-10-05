@@ -16,12 +16,23 @@ export const MarkdownEditor = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [localContent, setLocalContent] = useState(content);
 
+  // Track whether content change is from external source or user typing
+  // This prevents cursor jumps when external updates come in during typing
+  const isExternalChangeRef = useRef(true);
+
   // Sync external content changes to local state
+  // Only update if this is an external change AND content actually differs
   useEffect(() => {
-    setLocalContent(content);
-  }, [content]);
+    if (isExternalChangeRef.current && content !== localContent) {
+      setLocalContent(content);
+    }
+    // Reset flag after each content prop change
+    isExternalChangeRef.current = true;
+  }, [content, localContent]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    // Mark this as a user-initiated change to prevent external updates from overwriting
+    isExternalChangeRef.current = false;
     const newValue = e.target.value;
     setLocalContent(newValue);
     // Send raw markdown exactly as typed - no normalization
