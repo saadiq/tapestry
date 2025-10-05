@@ -131,14 +131,22 @@ interface JSONContent {
 }
 
 /**
+ * Cached DOMParser instance for performance
+ */
+let cachedDOMParser: DOMParser | null = null;
+
+/**
  * Parse HTML string to TipTap JSON using DOM parser
  * This handles complex HTML structures safely
  */
 function parseHTMLToJSON(html: string): JSONContent[] {
   // Check if DOMParser is available (it should be in the renderer process)
   if (typeof DOMParser !== 'undefined') {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
+    // Reuse DOMParser instance for performance
+    if (!cachedDOMParser) {
+      cachedDOMParser = new DOMParser();
+    }
+    const doc = cachedDOMParser.parseFromString(html, 'text/html');
 
     // Convert DOM nodes to TipTap JSON
     return domNodesToJSON(doc.body.childNodes);
@@ -196,6 +204,17 @@ function parseSimpleHTMLToJSON(html: string): JSONContent[] {
     }
 
     if (earliestMatch) {
+      // Safeguard: If match has zero length, break to prevent infinite loop
+      if (earliestMatch.length === 0) {
+        if (remaining.trim()) {
+          result.push({
+            type: 'text',
+            text: remaining,
+          });
+        }
+        break;
+      }
+
       // Add plain text before the match
       if (earliestMatch.index > 0) {
         const plainText = remaining.substring(0, earliestMatch.index);
@@ -241,8 +260,10 @@ function parseSimpleHTMLToJSON(html: string): JSONContent[] {
 
 /**
  * Convert DOM nodes to TipTap JSON format
+ * @param nodes - The DOM nodes to convert
+ * @param depth - Current recursion depth
  */
-function domNodesToJSON(nodes: NodeListOf<ChildNode>): JSONContent[] {
+function domNodesToJSON(nodes: NodeListOf<ChildNode>, depth: number = 0): JSONContent[] {
   // Check if we're in a browser environment
   if (typeof Node === 'undefined') {
     return [];
@@ -251,7 +272,7 @@ function domNodesToJSON(nodes: NodeListOf<ChildNode>): JSONContent[] {
   const result: JSONContent[] = [];
 
   for (const node of Array.from(nodes)) {
-    const jsonNode = domNodeToJSON(node);
+    const jsonNode = domNodeToJSON(node, depth);
     if (jsonNode) {
       if (Array.isArray(jsonNode)) {
         result.push(...jsonNode);
@@ -275,7 +296,12 @@ function sanitizeElementAttributes(element: Element): void {
     'onkeydown', 'onkeyup', 'onkeypress',
     'onfocus', 'onblur', 'onchange', 'onsubmit', 'onreset',
     'onscroll', 'onresize', 'oncontextmenu',
-    'ontouchstart', 'ontouchmove', 'ontouchend',
+    'ontouchstart', 'ontouchmove', 'ontouchend', 'ontouchcancel',
+    'onanimationstart', 'onanimationend', 'onanimationiteration',
+    'ontransitionstart', 'ontransitionend', 'ontransitionrun', 'ontransitioncancel',
+    'onpointerover', 'onpointerenter', 'onpointerdown', 'onpointermove',
+    'onpointerup', 'onpointercancel', 'onpointerout', 'onpointerleave',
+    'onwheel', 'ontoggle', 'oninput', 'onsearch',
   ];
 
   for (const attr of dangerousAttributes) {
@@ -286,18 +312,32 @@ function sanitizeElementAttributes(element: Element): void {
 }
 
 /**
- * Convert a single DOM node to TipTap JSON
+ * Maximum DOM traversal depth to prevent stack overflow
  */
-function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
+const MAX_DOM_DEPTH = 100;
+
+/**
+ * Convert a single DOM node to TipTap JSON
+ * @param node - The DOM node to convert
+ * @param depth - Current recursion depth (used to prevent stack overflow)
+ */
+function domNodeToJSON(node: Node, depth: number = 0): JSONContent | JSONContent[] | null {
   // Check if we're in a browser environment
   if (typeof Node === 'undefined') {
+    return null;
+  }
+
+  // Depth limit safeguard to prevent stack overflow
+  if (depth > MAX_DOM_DEPTH) {
     return null;
   }
 
   // Text nodes
   if (node.nodeType === Node.TEXT_NODE) {
     const text = node.textContent || '';
-    if (!text.trim()) return null;
+    // Preserve whitespace-only text nodes for proper spacing between inline elements
+    // Only skip completely empty strings
+    if (!text) return null;
 
     return {
       type: 'text',
@@ -316,7 +356,7 @@ function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
     // Handle different HTML elements
     switch (tagName) {
       case 'p': {
-        const content = domNodesToJSON(element.childNodes);
+        const content = domNodesToJSON(element.childNodes, depth + 1);
         if (content.length === 0) return null;
         return {
           type: 'paragraph',
@@ -331,7 +371,7 @@ function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
       case 'h5':
       case 'h6': {
         const level = parseInt(tagName.slice(1));
-        const content = domNodesToJSON(element.childNodes);
+        const content = domNodesToJSON(element.childNodes, depth + 1);
         if (content.length === 0) return null;
         return {
           type: 'heading',
@@ -348,7 +388,7 @@ function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
             content: [
               {
                 type: 'paragraph' as NodeType,
-                content: domNodesToJSON(li.childNodes),
+                content: domNodesToJSON(li.childNodes, depth + 1),
               },
             ],
           }));
@@ -368,7 +408,7 @@ function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
             content: [
               {
                 type: 'paragraph' as NodeType,
-                content: domNodesToJSON(li.childNodes),
+                content: domNodesToJSON(li.childNodes, depth + 1),
               },
             ],
           }));
@@ -381,7 +421,7 @@ function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
       }
 
       case 'blockquote': {
-        const content = domNodesToJSON(element.childNodes);
+        const content = domNodesToJSON(element.childNodes, depth + 1);
         if (content.length === 0) return null;
         return {
           type: 'blockquote',
@@ -402,7 +442,7 @@ function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
 
       case 'strong':
       case 'b': {
-        const content = domNodesToJSON(element.childNodes);
+        const content = domNodesToJSON(element.childNodes, depth + 1);
         return content.map(c => {
           if (c.type === 'text') {
             return {
@@ -416,7 +456,7 @@ function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
 
       case 'em':
       case 'i': {
-        const content = domNodesToJSON(element.childNodes);
+        const content = domNodesToJSON(element.childNodes, depth + 1);
         return content.map(c => {
           if (c.type === 'text') {
             return {
@@ -431,7 +471,7 @@ function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
       case 's':
       case 'strike':
       case 'del': {
-        const content = domNodesToJSON(element.childNodes);
+        const content = domNodesToJSON(element.childNodes, depth + 1);
         return content.map(c => {
           if (c.type === 'text') {
             return {
@@ -460,10 +500,10 @@ function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
         const sanitizedHref = sanitizeLinkUrl(href);
         if (!sanitizedHref) {
           // If link is unsafe, just return the text content
-          return domNodesToJSON(element.childNodes);
+          return domNodesToJSON(element.childNodes, depth + 1);
         }
 
-        const content = domNodesToJSON(element.childNodes);
+        const content = domNodesToJSON(element.childNodes, depth + 1);
         return content.map(c => {
           if (c.type === 'text') {
             return {
@@ -501,7 +541,7 @@ function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
       case 'sup': {
         // For inline elements, just extract the text content
         // In the future, we could add custom marks for these
-        const content = domNodesToJSON(element.childNodes);
+        const content = domNodesToJSON(element.childNodes, depth + 1);
         return content;
       }
 
@@ -512,7 +552,7 @@ function domNodeToJSON(node: Node): JSONContent | JSONContent[] | null {
       default: {
         // For unsupported block elements, try to extract their content
         // Wrap in paragraph if needed
-        const content = domNodesToJSON(element.childNodes);
+        const content = domNodesToJSON(element.childNodes, depth + 1);
         if (content.length === 0) return null;
 
         // If it's a block-level element and contains only text/inline content,

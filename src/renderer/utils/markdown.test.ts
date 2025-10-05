@@ -497,6 +497,76 @@ describe('markdown utils', () => {
         const hardBreaks = json.content![0].content!.filter(c => c.type === 'hardBreak');
         expect(hardBreaks.length).toBeGreaterThanOrEqual(3);
       });
+
+      it('should preserve whitespace between inline HTML elements', () => {
+        const markdown = '<b>Bold</b> <i>Italic</i>';
+        const json = markdownToJSON(markdown);
+
+        // Should have bold, space, and italic
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content).toBeDefined();
+
+        // Check that we have at least 3 content nodes (bold text, whitespace, italic text)
+        expect(json.content![0].content!.length).toBeGreaterThanOrEqual(3);
+
+        // Verify there's a text node with whitespace
+        const hasWhitespace = json.content![0].content!.some(c =>
+          c.type === 'text' && c.text && /\s/.test(c.text)
+        );
+        expect(hasWhitespace).toBe(true);
+      });
+
+      it('should strip animation event handlers', () => {
+        const markdown = '<div onanimationstart="alert(1)" onanimationend="alert(2)">Content</div>';
+        const json = markdownToJSON(markdown);
+
+        // Should extract text but not include animation event attributes
+        const textContent = JSON.stringify(json);
+        expect(textContent).not.toContain('onanimationstart');
+        expect(textContent).not.toContain('onanimationend');
+        expect(textContent).not.toContain('alert');
+        // But should still have the text
+        const hasText = json.content!.some(c =>
+          c.content?.some(inner => inner.type === 'text' && inner.text?.includes('Content'))
+        );
+        expect(hasText).toBe(true);
+      });
+
+      it('should strip transition event handlers', () => {
+        const markdown = '<div ontransitionend="alert(1)" ontransitionstart="alert(2)">Content</div>';
+        const json = markdownToJSON(markdown);
+
+        // Should extract text but not include transition event attributes
+        const textContent = JSON.stringify(json);
+        expect(textContent).not.toContain('ontransitionend');
+        expect(textContent).not.toContain('ontransitionstart');
+        expect(textContent).not.toContain('alert');
+      });
+
+      it('should strip pointer event handlers', () => {
+        const markdown = '<b onpointerover="alert(1)" onpointerenter="alert(2)">Click</b>';
+        const json = markdownToJSON(markdown);
+
+        // Should extract text but not include pointer event attributes
+        const textContent = JSON.stringify(json);
+        expect(textContent).not.toContain('onpointerover');
+        expect(textContent).not.toContain('onpointerenter');
+        expect(textContent).not.toContain('alert');
+        // But should still have the text
+        const hasText = json.content![0].content!.some(c => c.text?.includes('Click'));
+        expect(hasText).toBe(true);
+      });
+
+      it('should strip wheel and toggle event handlers', () => {
+        const markdown = '<div onwheel="alert(1)" ontoggle="alert(2)">Content</div>';
+        const json = markdownToJSON(markdown);
+
+        // Should extract text but not include wheel/toggle event attributes
+        const textContent = JSON.stringify(json);
+        expect(textContent).not.toContain('onwheel');
+        expect(textContent).not.toContain('ontoggle');
+        expect(textContent).not.toContain('alert');
+      });
     });
   });
 
