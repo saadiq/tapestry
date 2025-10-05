@@ -47,6 +47,9 @@ export const EditorComponent = ({
   // Store raw (unnormalized) content for restoration when switching back to markdown
   const rawContentRef = useRef(content);
 
+  // Track if content change was self-triggered (from normalization) to avoid overwriting rawContentRef
+  const selfTriggeredChangeRef = useRef(false);
+
   // Create stable callback refs to avoid dependency issues
   const onUpdateRef = useRef(onUpdate);
   const onContentLoadedRef = useRef(onContentLoaded);
@@ -70,6 +73,8 @@ export const EditorComponent = ({
     // Only call parent's onContentLoaded when in WYSIWYG mode
     // This allows normalization to happen when needed
     if (viewModeRef.current === 'wysiwyg') {
+      // Mark this as a self-triggered change to prevent overwriting rawContentRef
+      selfTriggeredChangeRef.current = true;
       onContentLoadedRef.current?.(convertedContent);
     }
   }, []);
@@ -89,41 +94,66 @@ export const EditorComponent = ({
     localStorage.setItem('editor-view-mode', viewMode);
   }, [viewMode]);
 
+  // Handler for markdown → WYSIWYG transition
+  const handleMarkdownToWysiwyg = useCallback(() => {
+    if (!editor || !content) return;
+    const json = markdownToJSON(content);
+    editor.commands.setContent(json);
+  }, [editor, content]);
+
+  // Handler for WYSIWYG → markdown transition
+  const handleWysiwygToMarkdown = useCallback(() => {
+    if (!hasWysiwygEditsRef.current && onUpdateRef.current) {
+      // No edits in WYSIWYG - restore raw unnormalized content
+      onUpdateRef.current(rawContentRef.current);
+    }
+    // If there were edits, keep the current content (it's already normalized)
+  }, []);
+
+  // Handler for content changes while in WYSIWYG mode
+  const handleContentChangeInWysiwyg = useCallback(() => {
+    if (!editor || !content) return;
+    const json = markdownToJSON(content);
+    editor.commands.setContent(json);
+  }, [editor, content]);
+
   // Sync content when switching view modes or when content changes from parent
   useEffect(() => {
     const isViewModeTransition = viewMode !== prevViewModeRef.current;
     const hasContentChanged = content !== prevContentRef.current;
 
     // When content changes from parent, reset edit tracking and store new raw content
+    // ONLY if this is NOT a self-triggered change from normalization
     if (hasContentChanged) {
       hasWysiwygEditsRef.current = false;
-      rawContentRef.current = content;
+
+      if (!selfTriggeredChangeRef.current) {
+        // External content change (file load) - store raw content
+        rawContentRef.current = content;
+      }
+
+      // Reset the self-triggered flag for next update
+      selfTriggeredChangeRef.current = false;
     }
 
     if (editor && content) {
       // Switching from markdown → WYSIWYG: always sync to editor
       if (viewMode === 'wysiwyg' && prevViewModeRef.current === 'markdown') {
-        const json = markdownToJSON(content);
-        editor.commands.setContent(json);
+        handleMarkdownToWysiwyg();
       }
       // Switching from WYSIWYG → markdown: restore raw content if no edits were made
       else if (viewMode === 'markdown' && prevViewModeRef.current === 'wysiwyg') {
-        if (!hasWysiwygEditsRef.current && onUpdateRef.current) {
-          // No edits in WYSIWYG - restore raw unnormalized content
-          onUpdateRef.current(rawContentRef.current);
-        }
-        // If there were edits, keep the current content (it's already normalized)
+        handleWysiwygToMarkdown();
       }
       // Content changed while in WYSIWYG mode: sync to editor
       else if (viewMode === 'wysiwyg' && hasContentChanged) {
-        const json = markdownToJSON(content);
-        editor.commands.setContent(json);
+        handleContentChangeInWysiwyg();
       }
     }
 
     prevViewModeRef.current = viewMode;
     prevContentRef.current = content;
-  }, [viewMode, editor, content]);
+  }, [viewMode, editor, content, handleMarkdownToWysiwyg, handleWysiwygToMarkdown, handleContentChangeInWysiwyg]);
 
   // Toggle view mode
   const toggleViewMode = () => {
