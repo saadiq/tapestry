@@ -7,6 +7,7 @@ import MarkdownIt from 'markdown-it';
 import type Token from 'markdown-it/lib/token';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
+import { sanitizeLinkUrl, sanitizeImageUrl } from './urlSanitizer';
 
 /**
  * Create a configured markdown-it parser instance
@@ -49,14 +50,84 @@ export const createTurndownService = (): TurndownService => {
 };
 
 /**
- * TipTap JSON node structure
+ * Token offset constants for predictable token sequences
+ * These represent the number of tokens consumed by a structure
+ */
+const TOKEN_OFFSET = {
+  /** heading_open, inline, heading_close */
+  HEADING: 3,
+  /** paragraph_open, inline, paragraph_close */
+  PARAGRAPH: 3,
+  /** list_item_open, content..., list_item_close */
+  LIST_ITEM: 1,
+} as const;
+
+/**
+ * Validation constants for table attributes
+ */
+const TABLE_LIMITS = {
+  /** Maximum colspan value */
+  MAX_COLSPAN: 100,
+  /** Maximum rowspan value */
+  MAX_ROWSPAN: 100,
+} as const;
+
+/**
+ * Supported node types in TipTap
+ */
+type NodeType =
+  | 'doc'
+  | 'paragraph'
+  | 'heading'
+  | 'bulletList'
+  | 'orderedList'
+  | 'listItem'
+  | 'blockquote'
+  | 'codeBlock'
+  | 'horizontalRule'
+  | 'table'
+  | 'tableRow'
+  | 'tableCell'
+  | 'tableHeader'
+  | 'image'
+  | 'text'
+  | 'hardBreak';
+
+/**
+ * Supported mark types in TipTap
+ */
+type MarkType = 'bold' | 'italic' | 'strike' | 'code' | 'link';
+
+/**
+ * Mark structure with optional attributes
+ */
+interface Mark {
+  type: MarkType;
+  attrs?: {
+    href?: string;
+    title?: string | null;
+    [key: string]: unknown;
+  };
+}
+
+/**
+ * Type-safe TipTap JSON node structure
  */
 interface JSONContent {
-  type: string;
-  attrs?: Record<string, unknown>;
+  type: NodeType;
+  attrs?: {
+    level?: number; // for headings
+    src?: string; // for images
+    alt?: string; // for images
+    title?: string | null; // for images
+    language?: string | null; // for code blocks
+    colspan?: number; // for table cells
+    rowspan?: number; // for table cells
+    [key: string]: unknown;
+  };
   content?: JSONContent[];
   text?: string;
-  marks?: Array<{ type: string; attrs?: Record<string, unknown> }>;
+  marks?: Mark[];
 }
 
 /**
@@ -108,7 +179,7 @@ function parseToken(
           attrs: { level },
           ...(content.length > 0 && { content }),
         },
-        nextIndex: index + 3, // heading_open, inline, heading_close
+        nextIndex: index + TOKEN_OFFSET.HEADING,
       };
     }
 
@@ -120,7 +191,7 @@ function parseToken(
           type: 'paragraph',
           ...(content.length > 0 && { content }),
         },
-        nextIndex: index + 3, // paragraph_open, inline, paragraph_close
+        nextIndex: index + TOKEN_OFFSET.PARAGRAPH,
       };
     }
 
@@ -205,23 +276,6 @@ function parseToken(
       return parseTable(tokens, index);
     }
 
-    case 'image': {
-      const src = token.attrGet('src') || '';
-      const alt = token.content || '';
-      const title = token.attrGet('title') || null;
-      return {
-        content: {
-          type: 'image',
-          attrs: {
-            src,
-            alt,
-            ...(title && { title }),
-          },
-        },
-        nextIndex: index + 1,
-      };
-    }
-
     default:
       return { content: null, nextIndex: index + 1 };
   }
@@ -237,7 +291,11 @@ function parseInlineContent(token: Token): JSONContent[] {
     return content;
   }
 
-  for (const child of token.children) {
+  // Use indexed loop to allow skipping processed tokens
+  let childIndex = 0;
+  while (childIndex < token.children.length) {
+    const child = token.children[childIndex];
+
     switch (child.type) {
       case 'text': {
         // Skip empty text nodes - TipTap doesn't allow them
@@ -265,8 +323,9 @@ function parseInlineContent(token: Token): JSONContent[] {
       case 'strong_open': {
         // Find matching strong_close and collect content between
         const strongContent: JSONContent[] = [];
-        let i = token.children.indexOf(child) + 1;
+        let i = childIndex + 1;
         while (i < token.children.length && token.children[i].type !== 'strong_close') {
+          // Skip empty text nodes - TipTap doesn't allow them
           if (token.children[i].type === 'text' && token.children[i].content) {
             strongContent.push({
               type: 'text',
@@ -276,15 +335,21 @@ function parseInlineContent(token: Token): JSONContent[] {
           }
           i++;
         }
-        content.push(...strongContent);
+        // Only add if we have content
+        if (strongContent.length > 0) {
+          content.push(...strongContent);
+        }
+        // Skip past the tokens we just processed
+        childIndex = i; // Will be incremented at end of loop
         break;
       }
 
       case 'em_open': {
         // Find matching em_close and collect content between
         const emContent: JSONContent[] = [];
-        let i = token.children.indexOf(child) + 1;
+        let i = childIndex + 1;
         while (i < token.children.length && token.children[i].type !== 'em_close') {
+          // Skip empty text nodes - TipTap doesn't allow them
           if (token.children[i].type === 'text' && token.children[i].content) {
             emContent.push({
               type: 'text',
@@ -294,15 +359,21 @@ function parseInlineContent(token: Token): JSONContent[] {
           }
           i++;
         }
-        content.push(...emContent);
+        // Only add if we have content
+        if (emContent.length > 0) {
+          content.push(...emContent);
+        }
+        // Skip past the tokens we just processed
+        childIndex = i;
         break;
       }
 
       case 's_open': {
         // Strikethrough
         const strikeContent: JSONContent[] = [];
-        let i = token.children.indexOf(child) + 1;
+        let i = childIndex + 1;
         while (i < token.children.length && token.children[i].type !== 's_close') {
+          // Skip empty text nodes - TipTap doesn't allow them
           if (token.children[i].type === 'text' && token.children[i].content) {
             strikeContent.push({
               type: 'text',
@@ -312,16 +383,40 @@ function parseInlineContent(token: Token): JSONContent[] {
           }
           i++;
         }
-        content.push(...strikeContent);
+        // Only add if we have content
+        if (strikeContent.length > 0) {
+          content.push(...strikeContent);
+        }
+        // Skip past the tokens we just processed
+        childIndex = i;
         break;
       }
 
       case 'link_open': {
         const href = child.attrGet('href') || '';
+        const sanitizedHref = sanitizeLinkUrl(href);
+        let i = childIndex + 1;
+
+        // If URL is invalid/dangerous, render as plain text instead
+        if (!sanitizedHref) {
+          while (i < token.children.length && token.children[i].type !== 'link_close') {
+            if (token.children[i].type === 'text' && token.children[i].content) {
+              content.push({
+                type: 'text',
+                text: token.children[i].content,
+              });
+            }
+            i++;
+          }
+          // Skip past the tokens we just processed
+          childIndex = i;
+          break;
+        }
+
         const title = child.attrGet('title') || null;
         const linkContent: JSONContent[] = [];
-        let i = token.children.indexOf(child) + 1;
         while (i < token.children.length && token.children[i].type !== 'link_close') {
+          // Skip empty text nodes - TipTap doesn't allow them
           if (token.children[i].type === 'text' && token.children[i].content) {
             linkContent.push({
               type: 'text',
@@ -330,7 +425,7 @@ function parseInlineContent(token: Token): JSONContent[] {
                 {
                   type: 'link',
                   attrs: {
-                    href,
+                    href: sanitizedHref,
                     ...(title && { title }),
                   },
                 },
@@ -339,7 +434,12 @@ function parseInlineContent(token: Token): JSONContent[] {
           }
           i++;
         }
-        content.push(...linkContent);
+        // Only add if we have content
+        if (linkContent.length > 0) {
+          content.push(...linkContent);
+        }
+        // Skip past the tokens we just processed
+        childIndex = i;
         break;
       }
 
@@ -351,10 +451,35 @@ function parseInlineContent(token: Token): JSONContent[] {
         break;
       }
 
+      case 'image': {
+        const src = child.attrGet('src') || '';
+        const sanitizedSrc = sanitizeImageUrl(src);
+
+        // Skip image if URL is invalid/dangerous
+        if (!sanitizedSrc) {
+          break;
+        }
+
+        const alt = child.content || '';
+        const title = child.attrGet('title') || null;
+        content.push({
+          type: 'image',
+          attrs: {
+            src: sanitizedSrc,
+            alt,
+            ...(title && { title }),
+          },
+        });
+        break;
+      }
+
       default:
-        // Skip close tags and other tokens
+        // Skip close tags and other tokens (em_close, strong_close, link_close, etc.)
         break;
     }
+
+    // Move to next child token
+    childIndex++;
   }
 
   return content;
@@ -494,11 +619,24 @@ function parseTableCell(
   }
 
   // Get colspan and rowspan attributes if they exist
+  // Validate that they are positive integers
   const attrs: Record<string, unknown> = {};
   const colspan = token.attrGet('colspan');
   const rowspan = token.attrGet('rowspan');
-  if (colspan) attrs.colspan = parseInt(colspan);
-  if (rowspan) attrs.rowspan = parseInt(rowspan);
+
+  if (colspan) {
+    const colspanNum = parseInt(colspan, 10);
+    if (!isNaN(colspanNum) && colspanNum > 0 && colspanNum <= TABLE_LIMITS.MAX_COLSPAN) {
+      attrs.colspan = colspanNum;
+    }
+  }
+
+  if (rowspan) {
+    const rowspanNum = parseInt(rowspan, 10);
+    if (!isNaN(rowspanNum) && rowspanNum > 0 && rowspanNum <= TABLE_LIMITS.MAX_ROWSPAN) {
+      attrs.rowspan = rowspanNum;
+    }
+  }
 
   return {
     content: {

@@ -38,6 +38,9 @@ export const EditorComponent = ({
   // Track previous view mode to detect transitions
   const prevViewModeRef = useRef(viewMode);
 
+  // Track previous content to avoid unnecessary syncs
+  const prevContentRef = useRef(content);
+
   const editor = useEditor({
     content,
     onUpdate,
@@ -55,22 +58,23 @@ export const EditorComponent = ({
 
   // Sync content when switching from markdown → WYSIWYG
   // This ensures that changes made in markdown mode are immediately reflected in WYSIWYG mode
-  // Only syncs on actual view mode transitions to prevent infinite loops
+  // Only syncs on actual view mode transitions or content changes to prevent infinite loops
   useEffect(() => {
-    if (
-      viewMode === 'wysiwyg' &&
-      prevViewModeRef.current === 'markdown' &&
-      editor &&
-      content
-    ) {
-      // Convert markdown to TipTap JSON and set in editor
-      const json = markdownToJSON(content);
-      editor.commands.setContent(json);
+    const isViewModeTransition = viewMode === 'wysiwyg' && prevViewModeRef.current === 'markdown';
+    const hasContentChanged = content !== prevContentRef.current;
+
+    if (editor && content && (isViewModeTransition || (viewMode === 'wysiwyg' && hasContentChanged))) {
+      // Only update if we're transitioning or content actually changed
+      if (isViewModeTransition || hasContentChanged) {
+        // Convert markdown to TipTap JSON and set in editor
+        const json = markdownToJSON(content);
+        editor.commands.setContent(json);
+      }
     }
+
     prevViewModeRef.current = viewMode;
-    // Only trigger on viewMode changes, not content changes (content would cause infinite loop)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, editor]);
+    prevContentRef.current = content;
+  }, [viewMode, editor, content]);
 
   // Toggle view mode
   const toggleViewMode = () => {
@@ -116,7 +120,7 @@ export const EditorComponent = ({
         ) : (
           <MarkdownEditor
             content={content}
-            onUpdate={onUpdate || (() => {})}
+            onUpdate={onUpdate || (() => { /* noop */ })}
             placeholder={placeholder}
             editable={editable}
           />

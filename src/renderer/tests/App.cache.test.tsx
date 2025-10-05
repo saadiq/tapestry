@@ -1,4 +1,8 @@
 /**
+ * @vitest-environment happy-dom
+ */
+
+/**
  * Tests for multi-file cache management in App component
  *
  * These tests verify:

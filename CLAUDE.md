@@ -123,8 +123,101 @@ TipTap extensions used:
 **Markdown ↔ TipTap Conversion:**
 - **Markdown → TipTap**: Uses `markdownToJSON()` which parses markdown-it tokens directly to TipTap JSON format, bypassing HTML/DOM parsing entirely. This prevents browser DOM parser from injecting tbody/thead elements that TipTap's schema rejects, enabling proper table support.
 - **TipTap → Markdown**: Uses TurndownService with GFM plugin to convert HTML back to markdown.
+- **URL Security**: All links and images are sanitized through `urlSanitizer.ts` to prevent XSS attacks. Only `http:`, `https:`, and `mailto:` protocols are allowed for links, and `data:` URIs are allowed for images (image/* only).
 
 Editor state is managed via `useEditor` hook (wraps TipTap's `useTipTapEditor`) and content flows through `useFileContent` for persistence. View mode preference is persisted to localStorage.
+
+### Supported Markdown Syntax
+
+**Text Formatting:**
+- **Bold**: `**text**` or `__text__`
+- *Italic*: `*text*` or `_text_`
+- ***Bold + Italic***: `***text***`
+- ~~Strikethrough~~: `~~text~~`
+- `Inline code`: `` `code` ``
+
+**Headings:**
+```markdown
+# H1
+## H2
+### H3
+#### H4
+##### H5
+###### H6
+```
+
+**Lists:**
+```markdown
+- Unordered item 1
+- Unordered item 2
+  - Nested item
+
+1. Ordered item 1
+2. Ordered item 2
+```
+
+**Links and Images:**
+```markdown
+[Link text](https://example.com)
+[Link with title](https://example.com "Title")
+![Image alt text](https://example.com/image.png)
+```
+
+**Code Blocks** (with syntax highlighting):
+````markdown
+```javascript
+const x = 1;
+```
+
+```python
+def hello():
+    print("Hello")
+```
+````
+
+Supported languages: JavaScript, TypeScript, Python, Markdown, Bash, JSON, CSS, HTML
+
+**Tables** (GFM syntax):
+```markdown
+| Header 1 | Header 2 | Header 3 |
+|----------|----------|----------|
+| Cell 1   | Cell 2   | Cell 3   |
+| Cell 4   | Cell 5   | Cell 6   |
+```
+
+**Other Elements:**
+```markdown
+> Blockquote
+
+---
+Horizontal rule
+```
+
+### Markdown Limitations & Best Practices
+
+**Table Limitations:**
+- Maximum colspan/rowspan: 100 (validated for safety)
+- Complex table features (cell merging, alignment) may not round-trip perfectly
+- Very large tables (>50 rows) may impact performance
+- Tables are best edited in WYSIWYG mode for complex structures
+
+**Performance Considerations:**
+- Documents >1000 lines: Expect slight lag in markdown mode switching
+- Documents >5000 lines: Consider splitting into smaller files
+- Large tables: Use WYSIWYG mode for better performance
+- Content is hashed for comparison to prevent unnecessary re-parsing
+
+**Security:**
+- `javascript:`, `data:text/html`, `vbscript:`, and `file:` URLs are blocked
+- Image data URIs are restricted to `data:image/*`
+- Relative URLs and anchor links are allowed
+- HTML tags are disabled in markdown-it configuration
+
+**Round-Trip Fidelity:**
+- Most markdown syntax round-trips perfectly
+- Smart typography (em dashes, smart quotes) is enabled
+- Some whitespace normalization occurs during conversion
+- Switching between WYSIWYG and Markdown modes may normalize formatting
 
 ### File Watcher Pattern
 

@@ -10,6 +10,16 @@ import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight';
 import { common, createLowlight } from 'lowlight';
 import { markdownToJSON, createTurndownService } from '../utils/markdown';
 
+/**
+ * Create a shared lowlight instance with common languages
+ * This is defined at module scope to be shared across all editor instances
+ * and avoid recreating it on every hook call
+ *
+ * Note: Using 'common' provides a reasonable balance between features and bundle size
+ * Includes: JavaScript, TypeScript, Python, XML/HTML, CSS, Markdown, Bash, JSON, and more
+ */
+const sharedLowlight = createLowlight(common);
+
 interface UseEditorOptions {
   content?: string;
   onUpdate?: (content: string) => void;
@@ -17,6 +27,18 @@ interface UseEditorOptions {
   onSelectionUpdate?: () => void;
   placeholder?: string;
   editable?: boolean;
+}
+
+/**
+ * Simple string hash function (DJB2 algorithm)
+ * Used to quickly compare content without string comparisons
+ */
+function hashString(str: string): number {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 33) ^ str.charCodeAt(i);
+  }
+  return hash >>> 0; // Convert to unsigned 32-bit integer
 }
 
 // Main hook for useEditor
@@ -29,11 +51,15 @@ export const useEditor = ({
   editable = true,
 }: UseEditorOptions = {}) => {
   const lastContentRef = useRef('');
+  const lastContentHashRef = useRef(0);
   const isSettingContentRef = useRef(false);
   const turndown = useRef(createTurndownService());
 
-  // Create lowlight instance with common language grammars
-  const lowlight = useRef(createLowlight(common));
+  // Stable reference to onContentLoaded callback
+  const onContentLoadedRef = useRef(onContentLoaded);
+  useEffect(() => {
+    onContentLoadedRef.current = onContentLoaded;
+  }, [onContentLoaded]);
 
   const editor = useTipTapEditor({
     extensions: [
@@ -53,7 +79,7 @@ export const useEditor = ({
         link: false, // Disable StarterKit's Link to use custom configuration
       }),
       CodeBlockLowlight.configure({
-        lowlight: lowlight.current,
+        lowlight: sharedLowlight,
         HTMLAttributes: {
           class: 'hljs',
         },
@@ -120,8 +146,9 @@ export const useEditor = ({
       return;
     }
 
-    // Avoid updating if content hasn't changed
-    if (content === lastContentRef.current) {
+    // Avoid updating if content hasn't changed (use hash for performance)
+    const contentHash = hashString(content);
+    if (contentHash === lastContentHashRef.current) {
       return;
     }
 
@@ -130,6 +157,8 @@ export const useEditor = ({
       isSettingContentRef.current = true;
 
       // Convert markdown to TipTap JSON (bypasses HTML → DOM parser → TipTap pipeline)
+      // Note: We can't use useMemo here because we're inside useEffect,
+      // but the hash comparison above provides similar optimization
       const json = markdownToJSON(content);
 
       // Set content in editor using JSON format
@@ -145,10 +174,11 @@ export const useEditor = ({
       // When parent receives convertedMarkdown via onContentLoaded and passes it back,
       // we need to recognize it as the same content
       lastContentRef.current = convertedMarkdown;
+      lastContentHashRef.current = hashString(convertedMarkdown);
 
       // Notify parent of the converted content so it can update originalContent
-      if (onContentLoaded) {
-        onContentLoaded(convertedMarkdown);
+      if (onContentLoadedRef.current) {
+        onContentLoadedRef.current(convertedMarkdown);
       }
 
       // Reset flag after a short delay to ensure all events have processed
@@ -160,13 +190,13 @@ export const useEditor = ({
       // Fallback: set as plain text
       editor.commands.setContent(content, { emitUpdate: false });
       lastContentRef.current = content;
+      lastContentHashRef.current = contentHash;
 
       // Reset flag on error too
       setTimeout(() => {
         isSettingContentRef.current = false;
       }, 0);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content, editor]);
 
   return editor;
