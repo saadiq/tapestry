@@ -28,7 +28,12 @@ export const MarkdownEditor = ({
     }
     // Reset flag after each content prop change
     isExternalChangeRef.current = true;
-  }, [content, localContent]);
+    // Note: localContent is intentionally NOT in the dependency array.
+    // The check `content !== localContent` uses the current localContent value via closure,
+    // which is sufficient for detecting when external updates differ from local state.
+    // Including localContent would cause unnecessary effect runs on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     // Mark this as a user-initiated change to prevent external updates from overwriting
