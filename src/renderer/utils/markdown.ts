@@ -242,7 +242,19 @@ function parseSimpleHTMLToJSON(html: string): JSONContent[] {
       }
 
       // Move past this match
-      remaining = remaining.substring(earliestMatch.index + earliestMatch.length);
+      const newRemaining = remaining.substring(earliestMatch.index + earliestMatch.length);
+      // Safety: Ensure we're advancing at least 1 character to prevent infinite loop
+      if (newRemaining.length >= remaining.length) {
+        // Not advancing, add remaining text and break
+        if (remaining.trim()) {
+          result.push({
+            type: 'text',
+            text: remaining,
+          });
+        }
+        break;
+      }
+      remaining = newRemaining;
     } else {
       // No more matches, add remaining text
       if (remaining.trim()) {
@@ -302,6 +314,8 @@ function sanitizeElementAttributes(element: Element): void {
     'onpointerover', 'onpointerenter', 'onpointerdown', 'onpointermove',
     'onpointerup', 'onpointercancel', 'onpointerout', 'onpointerleave',
     'onwheel', 'ontoggle', 'oninput', 'onsearch',
+    'onformdata', 'onformchange', 'oninvalid', 'onsecuritypolicyviolation',
+    'onslotchange', 'oncopy', 'oncut', 'onpaste',
   ];
 
   for (const attr of dangerousAttributes) {
@@ -335,7 +349,7 @@ function domNodeToJSON(node: Node, depth: number = 0): JSONContent | JSONContent
   // Text nodes
   if (node.nodeType === Node.TEXT_NODE) {
     const text = node.textContent || '';
-    // Preserve whitespace-only text nodes for proper spacing between inline elements
+    // Preserve text nodes including whitespace-only for proper spacing
     // Only skip completely empty strings
     if (!text) return null;
 
@@ -442,6 +456,10 @@ function domNodeToJSON(node: Node, depth: number = 0): JSONContent | JSONContent
 
       case 'strong':
       case 'b': {
+        // Note: Nested HTML marks (e.g., <b><i>text</i></b>) may not combine properly.
+        // The text will be extracted correctly, but marks from nested elements may not
+        // be merged. This is a known limitation of the current "partial" HTML support.
+        // For example, <b><i>text</i></b> may apply only the outer bold mark, not both bold and italic.
         const content = domNodesToJSON(element.childNodes, depth + 1);
         return content.map(c => {
           if (c.type === 'text') {
