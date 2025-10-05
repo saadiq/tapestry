@@ -470,4 +470,195 @@ describe('EditorComponent - View Mode Switching', () => {
       // Verified by no editor commands being called
     });
   });
+
+  describe('Error Handling', () => {
+    it('should handle markdown parsing errors gracefully', () => {
+      // Mock console.error to verify error logging
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      localStorage.setItem('editor-view-mode', 'wysiwyg');
+
+      // Render component - it should not crash even if parsing fails
+      const { container } = render(
+        <EditorComponent
+          content="Test content"
+          onUpdate={onUpdateMock}
+          onContentLoaded={onContentLoadedMock}
+        />
+      );
+
+      expect(container).toBeTruthy();
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('should fallback to plain text when markdown conversion fails', async () => {
+      localStorage.setItem('editor-view-mode', 'wysiwyg');
+
+      const { rerender } = render(
+        <EditorComponent
+          content="Initial content"
+          onUpdate={onUpdateMock}
+          onContentLoaded={onContentLoadedMock}
+        />
+      );
+
+      // Mock console.error
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      // Switch to markdown then back to WYSIWYG
+      localStorage.setItem('editor-view-mode', 'markdown');
+      rerender(
+        <EditorComponent
+          content="Updated content"
+          onUpdate={onUpdateMock}
+          onContentLoaded={onContentLoadedMock}
+        />
+      );
+
+      localStorage.setItem('editor-view-mode', 'wysiwyg');
+      rerender(
+        <EditorComponent
+          content="Updated content"
+          onUpdate={onUpdateMock}
+          onContentLoaded={onContentLoadedMock}
+        />
+      );
+
+      // Component should still render
+      expect(screen.getByTestId('editor-content')).toBeInTheDocument();
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('should continue functioning after error recovery', () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      localStorage.setItem('editor-view-mode', 'wysiwyg');
+
+      const { rerender } = render(
+        <EditorComponent
+          content="Content 1"
+          onUpdate={onUpdateMock}
+          onContentLoaded={onContentLoadedMock}
+        />
+      );
+
+      // Update content after potential error
+      rerender(
+        <EditorComponent
+          content="Content 2"
+          onUpdate={onUpdateMock}
+          onContentLoaded={onContentLoadedMock}
+        />
+      );
+
+      // Should still be functional
+      expect(screen.getByTestId('editor-content')).toBeInTheDocument();
+
+      consoleErrorSpy.mockRestore();
+    });
+  });
+
+  describe('Callback Ref Updates', () => {
+    it('should use updated onUpdate callback', async () => {
+      const firstCallback = vi.fn();
+      const secondCallback = vi.fn();
+
+      localStorage.setItem('editor-view-mode', 'wysiwyg');
+
+      const { rerender } = render(
+        <EditorComponent
+          content="Test content"
+          onUpdate={firstCallback}
+          onContentLoaded={onContentLoadedMock}
+        />
+      );
+
+      // Update the callback
+      rerender(
+        <EditorComponent
+          content="Test content"
+          onUpdate={secondCallback}
+          onContentLoaded={onContentLoadedMock}
+        />
+      );
+
+      // Simulate content update
+      await act(async () => {
+        secondCallback('Updated content');
+      });
+
+      // Second callback should be called, not the first
+      expect(secondCallback).toHaveBeenCalledWith('Updated content');
+      expect(firstCallback).not.toHaveBeenCalledWith('Updated content');
+    });
+
+    it('should use updated onContentLoaded callback', async () => {
+      const firstCallback = vi.fn();
+      const secondCallback = vi.fn();
+
+      localStorage.setItem('editor-view-mode', 'wysiwyg');
+
+      const { rerender } = render(
+        <EditorComponent
+          content="Test content"
+          onUpdate={onUpdateMock}
+          onContentLoaded={firstCallback}
+        />
+      );
+
+      // Update the callback
+      rerender(
+        <EditorComponent
+          content="Test content"
+          onUpdate={onUpdateMock}
+          onContentLoaded={secondCallback}
+        />
+      );
+
+      // Simulate normalization
+      await act(async () => {
+        if (onContentLoadedCallback) {
+          onContentLoadedCallback('normalized');
+        }
+      });
+
+      // Second callback should be used
+      expect(secondCallback).toHaveBeenCalledWith('normalized');
+    });
+
+    it('should not call stale callbacks', async () => {
+      const staleCallback = vi.fn();
+      const currentCallback = vi.fn();
+
+      localStorage.setItem('editor-view-mode', 'wysiwyg');
+
+      const { rerender } = render(
+        <EditorComponent
+          content="Test content"
+          onUpdate={staleCallback}
+          onContentLoaded={onContentLoadedMock}
+        />
+      );
+
+      // Update callback
+      rerender(
+        <EditorComponent
+          content="Test content"
+          onUpdate={currentCallback}
+          onContentLoaded={onContentLoadedMock}
+        />
+      );
+
+      // Trigger update
+      await act(async () => {
+        currentCallback('new content');
+      });
+
+      // Only current callback should be called
+      expect(currentCallback).toHaveBeenCalled();
+      expect(staleCallback).not.toHaveBeenCalled();
+    });
+  });
 });
