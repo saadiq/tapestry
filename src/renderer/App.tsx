@@ -598,7 +598,7 @@ function AppContent() {
         <NoFileOpen hasDirectory={!!rootPath} onNewFile={handleNewFile} />
       ) : (fileContent.loading || isLoadingFile) ? (
         <div className="flex items-center justify-center h-full">
-          <span className="loading loading-spinner loading-lg"></span>
+          <span className="loading loading-spinner loading-lg" role="status" aria-label="Loading file"></span>
         </div>
       ) : fileContent.error ? (
         <div className="flex items-center justify-center h-full">
