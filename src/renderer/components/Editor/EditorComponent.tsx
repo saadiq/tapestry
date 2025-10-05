@@ -147,13 +147,11 @@ export const EditorComponent = ({
   const selfTriggeredChangeRef = useRef(false);
 
   // Create stable callback refs to avoid dependency issues
+  // Standard pattern: update refs on every render (no useEffect needed)
   const onUpdateRef = useRef(onUpdate);
   const onContentLoadedRef = useRef(onContentLoaded);
-
-  useEffect(() => {
-    onUpdateRef.current = onUpdate;
-    onContentLoadedRef.current = onContentLoaded;
-  }, [onUpdate, onContentLoaded]);
+  onUpdateRef.current = onUpdate;
+  onContentLoadedRef.current = onContentLoaded;
 
   // Create a wrapped onUpdate that tracks WYSIWYG edits
   const wrappedOnUpdate = useCallback((newContent: string) => {
@@ -190,29 +188,6 @@ export const EditorComponent = ({
     localStorage.setItem('editor-view-mode', viewMode);
   }, [viewMode]);
 
-  // Handler for markdown → WYSIWYG transition
-  const handleMarkdownToWysiwyg = useCallback(() => {
-    if (!editor || !content) return;
-    const json = markdownToJSON(content);
-    editor.commands.setContent(json);
-  }, [editor, content]);
-
-  // Handler for WYSIWYG → markdown transition
-  const handleWysiwygToMarkdown = useCallback(() => {
-    if (!hasWysiwygEditsRef.current && onUpdateRef.current) {
-      // No edits in WYSIWYG - restore raw unnormalized content
-      onUpdateRef.current(rawContentRef.current);
-    }
-    // If there were edits, keep the current content (it's already normalized)
-  }, []);
-
-  // Handler for content changes while in WYSIWYG mode
-  const handleContentChangeInWysiwyg = useCallback(() => {
-    if (!editor || !content) return;
-    const json = markdownToJSON(content);
-    editor.commands.setContent(json);
-  }, [editor, content]);
-
   // Sync content when switching view modes or when content changes from parent
   useEffect(() => {
     const isViewModeTransition = viewMode !== prevViewModeRef.current;
@@ -235,21 +210,39 @@ export const EditorComponent = ({
     if (editor && content) {
       // Switching from markdown → WYSIWYG: always sync to editor
       if (viewMode === 'wysiwyg' && prevViewModeRef.current === 'markdown') {
-        handleMarkdownToWysiwyg();
+        try {
+          const json = markdownToJSON(content);
+          editor.commands.setContent(json);
+        } catch (error) {
+          console.error('Failed to convert markdown to JSON:', error);
+          // Fallback: set as plain text to prevent complete failure
+          editor.commands.setContent(content);
+        }
       }
       // Switching from WYSIWYG → markdown: restore raw content if no edits were made
       else if (viewMode === 'markdown' && prevViewModeRef.current === 'wysiwyg') {
-        handleWysiwygToMarkdown();
+        if (!hasWysiwygEditsRef.current && onUpdateRef.current) {
+          // No edits in WYSIWYG - restore raw unnormalized content
+          onUpdateRef.current(rawContentRef.current);
+        }
+        // If there were edits, keep the current content (it's already normalized)
       }
       // Content changed while in WYSIWYG mode: sync to editor
       else if (viewMode === 'wysiwyg' && hasContentChanged) {
-        handleContentChangeInWysiwyg();
+        try {
+          const json = markdownToJSON(content);
+          editor.commands.setContent(json);
+        } catch (error) {
+          console.error('Failed to convert markdown to JSON:', error);
+          // Fallback: set as plain text to prevent complete failure
+          editor.commands.setContent(content);
+        }
       }
     }
 
     prevViewModeRef.current = viewMode;
     prevContentRef.current = content;
-  }, [viewMode, editor, content, handleMarkdownToWysiwyg, handleWysiwygToMarkdown, handleContentChangeInWysiwyg]);
+  }, [viewMode, editor, content]);
 
   // Toggle view mode
   const toggleViewMode = () => {
