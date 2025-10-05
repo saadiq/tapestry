@@ -181,6 +181,98 @@ describe('markdown utils', () => {
       });
     });
 
+    describe('HTML support', () => {
+      it('should convert inline bold HTML tags', () => {
+        const markdown = 'This is <b>bold</b> and <strong>strong</strong> text';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content).toHaveLength(5); // "This is ", "bold", " and ", "strong", " text"
+        expect(json.content![0].content![1].text).toBe('bold');
+        expect(json.content![0].content![1].marks![0].type).toBe('bold');
+        expect(json.content![0].content![3].text).toBe('strong');
+        expect(json.content![0].content![3].marks![0].type).toBe('bold');
+      });
+
+      it('should convert inline italic HTML tags', () => {
+        const markdown = 'This is <i>italic</i> and <em>emphasized</em> text';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content![1].text).toBe('italic');
+        expect(json.content![0].content![1].marks![0].type).toBe('italic');
+        expect(json.content![0].content![3].text).toBe('emphasized');
+        expect(json.content![0].content![3].marks![0].type).toBe('italic');
+      });
+
+      it('should convert inline strikethrough HTML tags', () => {
+        const markdown = 'This is <s>strikethrough</s>, <strike>strike</strike>, and <del>deleted</del> text';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content![1].marks![0].type).toBe('strike');
+        expect(json.content![0].content![3].marks![0].type).toBe('strike');
+        expect(json.content![0].content![5].marks![0].type).toBe('strike');
+      });
+
+      it('should convert inline code HTML tags', () => {
+        const markdown = 'This is <code>inline code</code> text';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content![1].text).toBe('inline code');
+        expect(json.content![0].content![1].marks![0].type).toBe('code');
+      });
+
+      it('should handle block-level HTML', () => {
+        const markdown = '<b>Bold text in a block</b>';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content![0].text).toBe('Bold text in a block');
+        expect(json.content![0].content![0].marks![0].type).toBe('bold');
+      });
+
+      it('should handle mixed markdown and HTML', () => {
+        const markdown = '**Markdown bold** and <b>HTML bold</b>';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('paragraph');
+        // First part is markdown bold
+        expect(json.content![0].content![0].marks![0].type).toBe('bold');
+        // Second part is HTML bold
+        expect(json.content![0].content![2].marks![0].type).toBe('bold');
+      });
+
+      it('should handle nested HTML tags', () => {
+        const markdown = '<b><i>Bold and italic</i></b>';
+        const json = markdownToJSON(markdown);
+
+        // Note: Our simple parser doesn't handle nested tags yet
+        // This test documents current behavior
+        expect(json.content![0].type).toBe('paragraph');
+      });
+
+      it('should skip unsupported HTML tags', () => {
+        const markdown = '<u>Underline</u> text';
+        const json = markdownToJSON(markdown);
+
+        // Underline is not supported by default in TipTap, so it's rendered as plain text
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content![0].text).toBe('Underline');
+        expect(json.content![0].content![0].marks).toBeUndefined();
+      });
+
+      it('should handle HTML in lists', () => {
+        const markdown = '- Item with <b>bold</b> text\n- Another <i>italic</i> item';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('bulletList');
+        expect(json.content![0].content![0].content![0].content![1].marks![0].type).toBe('bold');
+        expect(json.content![0].content![1].content![0].content![1].marks![0].type).toBe('italic');
+      });
+    });
+
     describe('complex nested structures', () => {
       it('should convert nested lists', () => {
         const markdown = '- Item 1\n  - Nested 1\n  - Nested 2\n- Item 2';

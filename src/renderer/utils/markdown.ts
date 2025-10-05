@@ -13,14 +13,14 @@ import { sanitizeLinkUrl, sanitizeImageUrl } from './urlSanitizer';
  * Create a configured markdown-it parser instance
  * Configuration:
  * - 'default' preset with standard markdown features
- * - html: false - Disables raw HTML for security (prevents XSS)
+ * - html: true - Enables raw HTML parsing (with sanitization in conversion)
  * - breaks: true - Converts line breaks to <br> tags
  * - Table support enabled for GFM tables
  * Note: Syntax highlighting is handled by TipTap's CodeBlockLowlight, not markdown-it
  */
 export const createMarkdownParser = (): MarkdownIt => {
   const md = new MarkdownIt('default', {
-    html: false,
+    html: true,
     breaks: true,
   });
 
@@ -128,6 +128,93 @@ interface JSONContent {
   content?: JSONContent[];
   text?: string;
   marks?: Mark[];
+}
+
+/**
+ * Parse HTML string to extract text content and marks
+ * This handles basic inline HTML tags safely
+ */
+function parseHTMLToJSON(html: string): JSONContent[] {
+  const result: JSONContent[] = [];
+
+  // Basic HTML tag patterns for inline elements
+  const patterns = [
+    { regex: /<b>(.*?)<\/b>/gi, mark: 'bold' },
+    { regex: /<strong>(.*?)<\/strong>/gi, mark: 'bold' },
+    { regex: /<i>(.*?)<\/i>/gi, mark: 'italic' },
+    { regex: /<em>(.*?)<\/em>/gi, mark: 'italic' },
+    { regex: /<s>(.*?)<\/s>/gi, mark: 'strike' },
+    { regex: /<strike>(.*?)<\/strike>/gi, mark: 'strike' },
+    { regex: /<del>(.*?)<\/del>/gi, mark: 'strike' },
+    { regex: /<code>(.*?)<\/code>/gi, mark: 'code' },
+    { regex: /<u>(.*?)<\/u>/gi, mark: 'underline' },
+  ];
+
+  // Process HTML string segment by segment
+  let remaining = html;
+  let position = 0;
+
+  while (remaining.length > 0) {
+    let earliestMatch: { index: number; length: number; content: string; mark: string } | null = null;
+    let earliestIndex = Infinity;
+
+    // Find the earliest matching HTML tag
+    for (const pattern of patterns) {
+      pattern.regex.lastIndex = 0; // Reset regex
+      const match = pattern.regex.exec(remaining);
+      if (match && match.index < earliestIndex) {
+        earliestIndex = match.index;
+        earliestMatch = {
+          index: match.index,
+          length: match[0].length,
+          content: match[1],
+          mark: pattern.mark,
+        };
+      }
+    }
+
+    if (earliestMatch) {
+      // Add plain text before the match
+      if (earliestMatch.index > 0) {
+        const plainText = remaining.substring(0, earliestMatch.index);
+        if (plainText.trim()) {
+          result.push({
+            type: 'text',
+            text: plainText,
+          });
+        }
+      }
+
+      // Add the marked text (skip underline as TipTap doesn't have it by default)
+      if (earliestMatch.content && earliestMatch.mark !== 'underline') {
+        result.push({
+          type: 'text',
+          text: earliestMatch.content,
+          marks: [{ type: earliestMatch.mark as MarkType }],
+        });
+      } else if (earliestMatch.content) {
+        // For underline or unsupported marks, just add as plain text
+        result.push({
+          type: 'text',
+          text: earliestMatch.content,
+        });
+      }
+
+      // Move past this match
+      remaining = remaining.substring(earliestMatch.index + earliestMatch.length);
+    } else {
+      // No more matches, add remaining text
+      if (remaining.trim()) {
+        result.push({
+          type: 'text',
+          text: remaining,
+        });
+      }
+      break;
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -274,6 +361,22 @@ function parseToken(
 
     case 'table_open': {
       return parseTable(tokens, index);
+    }
+
+    case 'html_block': {
+      // Parse block-level HTML using the simpler utility
+      const htmlContent = parseHTMLToJSON(token.content);
+      if (htmlContent.length > 0) {
+        return {
+          content: {
+            type: 'paragraph',
+            content: htmlContent,
+          },
+          nextIndex: index + 1,
+        };
+      }
+      // If no content parsed, skip this token
+      return { content: null, nextIndex: index + 1 };
     }
 
     default:
@@ -470,6 +573,92 @@ function parseInlineContent(token: Token): JSONContent[] {
             ...(title && { title }),
           },
         });
+        break;
+      }
+
+      case 'html_inline': {
+        // Handle HTML tags - they come as separate open/close tokens
+        const tagContent = child.content.toLowerCase();
+
+        // Check if it's an opening tag
+        if (tagContent.match(/^<(b|strong|i|em|s|strike|del|code|u)>$/)) {
+          const tagName = tagContent.slice(1, -1);
+
+          // Find the matching closing tag and collect content between
+          let markType: MarkType | null = null;
+          switch (tagName) {
+            case 'b':
+            case 'strong':
+              markType = 'bold';
+              break;
+            case 'i':
+            case 'em':
+              markType = 'italic';
+              break;
+            case 's':
+            case 'strike':
+            case 'del':
+              markType = 'strike';
+              break;
+            case 'code':
+              markType = 'code';
+              break;
+            // Skip 'u' as TipTap doesn't support underline by default
+          }
+
+          if (markType) {
+            // Look for content until closing tag
+            let i = childIndex + 1;
+            const markedContent: JSONContent[] = [];
+            while (i < token.children.length) {
+              const nextChild = token.children[i];
+
+              // Check if we hit the closing tag
+              if (nextChild.type === 'html_inline' &&
+                  nextChild.content.toLowerCase() === `</${tagName}>`) {
+                // Found closing tag - add all collected content with marks
+                if (markedContent.length > 0) {
+                  content.push(...markedContent);
+                }
+                childIndex = i; // Skip past the closing tag
+                break;
+              }
+
+              // Collect text content
+              if (nextChild.type === 'text' && nextChild.content) {
+                markedContent.push({
+                  type: 'text',
+                  text: nextChild.content,
+                  marks: [{ type: markType }],
+                });
+              }
+
+              i++;
+            }
+          } else if (tagName === 'u') {
+            // For unsupported tags like underline, collect text without marks
+            let i = childIndex + 1;
+            while (i < token.children.length) {
+              const nextChild = token.children[i];
+
+              if (nextChild.type === 'html_inline' &&
+                  nextChild.content.toLowerCase() === `</${tagName}>`) {
+                childIndex = i;
+                break;
+              }
+
+              if (nextChild.type === 'text' && nextChild.content) {
+                content.push({
+                  type: 'text',
+                  text: nextChild.content,
+                });
+              }
+
+              i++;
+            }
+          }
+        }
+        // Skip closing tags as they're handled above
         break;
       }
 
