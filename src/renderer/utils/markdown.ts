@@ -46,6 +46,75 @@ export const createTurndownService = (): TurndownService => {
   // Add GFM plugin for table support
   turndown.use(gfm);
 
+  // Add custom rule to handle TipTap's table structure with <p> tags in cells
+  // This must come after the GFM plugin to override its table handling
+  turndown.addRule('tiptapTable', {
+    filter: (node) => {
+      // Check if this is a table with the TipTap structure (has <p> tags in cells)
+      if (node.nodeName === 'TABLE') {
+        const firstCell = node.querySelector('td, th');
+        return firstCell?.querySelector('p') !== null;
+      }
+      return false;
+    },
+    replacement: (content, node) => {
+      const element = node as HTMLTableElement;
+      const rows: string[][] = [];
+      const alignment: string[] = [];
+      let hasHeader = false;
+
+      // Process each row
+      const tableRows = Array.from(element.querySelectorAll('tr'));
+      tableRows.forEach((row, rowIndex) => {
+        const cells: string[] = [];
+        const cellElements = Array.from(row.querySelectorAll('th, td'));
+
+        cellElements.forEach((cell) => {
+          // Extract text from paragraph tags or direct text content
+          const paragraphs = cell.querySelectorAll('p');
+          let cellText = '';
+          if (paragraphs.length > 0) {
+            cellText = Array.from(paragraphs).map(p => p.textContent || '').join(' ');
+          } else {
+            cellText = cell.textContent || '';
+          }
+          cells.push(cellText.trim());
+        });
+
+        if (cellElements.length > 0 && cellElements[0].tagName === 'TH') {
+          hasHeader = true;
+        }
+
+        if (cells.length > 0) {
+          rows.push(cells);
+        }
+      });
+
+      if (rows.length === 0) {
+        return '';
+      }
+
+      // Build markdown table
+      let markdown = '';
+
+      rows.forEach((row, rowIndex) => {
+        markdown += '| ' + row.join(' | ') + ' |\n';
+
+        // Add separator after header row
+        if (rowIndex === 0 && hasHeader) {
+          const separator = row.map(() => '---').join(' | ');
+          markdown += '| ' + separator + ' |\n';
+        } else if (rowIndex === 0 && !hasHeader) {
+          // If no header, add separator after first row
+          const separator = row.map(() => '---').join(' | ');
+          markdown += '| ' + separator + ' |\n';
+        }
+      });
+
+      return '\n\n' + markdown + '\n\n';
+    }
+  });
+
   return turndown;
 };
 
