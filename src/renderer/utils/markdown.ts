@@ -142,14 +142,28 @@ let cachedDOMParser: DOMParser | null = null;
 function parseHTMLToJSON(html: string): JSONContent[] {
   // Check if DOMParser is available (it should be in the renderer process)
   if (typeof DOMParser !== 'undefined') {
-    // Reuse DOMParser instance for performance
-    if (!cachedDOMParser) {
-      cachedDOMParser = new DOMParser();
-    }
-    const doc = cachedDOMParser.parseFromString(html, 'text/html');
+    try {
+      // Reuse DOMParser instance for performance
+      if (!cachedDOMParser) {
+        cachedDOMParser = new DOMParser();
+      }
+      const doc = cachedDOMParser.parseFromString(html, 'text/html');
 
-    // Convert DOM nodes to TipTap JSON
-    return domNodesToJSON(doc.body.childNodes);
+      // Check for parse errors
+      const parseErrors = doc.getElementsByTagName('parsererror');
+      if (parseErrors.length > 0) {
+        // If parsing failed, fall back to simple parser
+        console.warn('DOMParser encountered an error, falling back to simple parser');
+        return parseSimpleHTMLToJSON(html);
+      }
+
+      // Convert DOM nodes to TipTap JSON
+      return domNodesToJSON(doc.body.childNodes);
+    } catch (error) {
+      // If DOMParser throws an error, fall back to simple parser
+      console.warn('DOMParser error:', error);
+      return parseSimpleHTMLToJSON(html);
+    }
   } else {
     // Fallback for Node/test environments - use simple parsing
     // First check if it's simple inline HTML
@@ -163,23 +177,26 @@ function parseHTMLToJSON(html: string): JSONContent[] {
 }
 
 /**
+ * HTML tag patterns for inline elements - moved outside to avoid re-creation
+ */
+const getHTMLPatterns = () => [
+  { regex: /<b>([\s\S]*?)<\/b>/gi, mark: 'bold' },
+  { regex: /<strong>([\s\S]*?)<\/strong>/gi, mark: 'bold' },
+  { regex: /<i>([\s\S]*?)<\/i>/gi, mark: 'italic' },
+  { regex: /<em>([\s\S]*?)<\/em>/gi, mark: 'italic' },
+  { regex: /<s>([\s\S]*?)<\/s>/gi, mark: 'strike' },
+  { regex: /<strike>([\s\S]*?)<\/strike>/gi, mark: 'strike' },
+  { regex: /<del>([\s\S]*?)<\/del>/gi, mark: 'strike' },
+  { regex: /<code>([\s\S]*?)<\/code>/gi, mark: 'code' },
+  { regex: /<u>([\s\S]*?)<\/u>/gi, mark: 'underline' },
+];
+
+/**
  * Parse simple inline HTML tags (for backward compatibility)
  */
 function parseSimpleHTMLToJSON(html: string): JSONContent[] {
   const result: JSONContent[] = [];
-
-  // Basic HTML tag patterns for inline elements
-  const patterns = [
-    { regex: /<b>(.*?)<\/b>/gi, mark: 'bold' },
-    { regex: /<strong>(.*?)<\/strong>/gi, mark: 'bold' },
-    { regex: /<i>(.*?)<\/i>/gi, mark: 'italic' },
-    { regex: /<em>(.*?)<\/em>/gi, mark: 'italic' },
-    { regex: /<s>(.*?)<\/s>/gi, mark: 'strike' },
-    { regex: /<strike>(.*?)<\/strike>/gi, mark: 'strike' },
-    { regex: /<del>(.*?)<\/del>/gi, mark: 'strike' },
-    { regex: /<code>(.*?)<\/code>/gi, mark: 'code' },
-    { regex: /<u>(.*?)<\/u>/gi, mark: 'underline' },
-  ];
+  const patterns = getHTMLPatterns();
 
   // Process HTML string segment by segment
   let remaining = html;
@@ -206,7 +223,7 @@ function parseSimpleHTMLToJSON(html: string): JSONContent[] {
     if (earliestMatch) {
       // Safeguard: If match has zero length, break to prevent infinite loop
       if (earliestMatch.length === 0) {
-        if (remaining.trim()) {
+        if (remaining) {
           result.push({
             type: 'text',
             text: remaining,
@@ -218,7 +235,7 @@ function parseSimpleHTMLToJSON(html: string): JSONContent[] {
       // Add plain text before the match
       if (earliestMatch.index > 0) {
         const plainText = remaining.substring(0, earliestMatch.index);
-        if (plainText.trim()) {
+        if (plainText) {
           result.push({
             type: 'text',
             text: plainText,
@@ -228,11 +245,30 @@ function parseSimpleHTMLToJSON(html: string): JSONContent[] {
 
       // Add the marked text (skip underline as TipTap doesn't have it by default)
       if (earliestMatch.content && earliestMatch.mark !== 'underline') {
-        result.push({
-          type: 'text',
-          text: earliestMatch.content,
-          marks: [{ type: earliestMatch.mark as MarkType }],
+        // Check if the content contains nested HTML tags
+        const nestedPatterns = getHTMLPatterns();
+        const hasNestedTags = nestedPatterns.some(p => {
+          return p.regex.test(earliestMatch.content);
         });
+
+        if (hasNestedTags) {
+          // Recursively parse nested content
+          const nestedContent = parseSimpleHTMLToJSON(earliestMatch.content);
+          // Add the current mark to all text nodes in the nested content
+          nestedContent.forEach(node => {
+            if (node.type === 'text') {
+              node.marks = [...(node.marks || []), { type: earliestMatch.mark as MarkType }];
+            }
+          });
+          result.push(...nestedContent);
+        } else {
+          // No nested tags, add as simple marked text
+          result.push({
+            type: 'text',
+            text: earliestMatch.content,
+            marks: [{ type: earliestMatch.mark as MarkType }],
+          });
+        }
       } else if (earliestMatch.content) {
         // For underline or unsupported marks, just add as plain text
         result.push({
@@ -246,7 +282,7 @@ function parseSimpleHTMLToJSON(html: string): JSONContent[] {
       // Safety: Ensure we're advancing at least 1 character to prevent infinite loop
       if (newRemaining.length >= remaining.length) {
         // Not advancing, add remaining text and break
-        if (remaining.trim()) {
+        if (remaining) {
           result.push({
             type: 'text',
             text: remaining,
@@ -257,7 +293,7 @@ function parseSimpleHTMLToJSON(html: string): JSONContent[] {
       remaining = newRemaining;
     } else {
       // No more matches, add remaining text
-      if (remaining.trim()) {
+      if (remaining) {
         result.push({
           type: 'text',
           text: remaining,
@@ -456,10 +492,6 @@ function domNodeToJSON(node: Node, depth: number = 0): JSONContent | JSONContent
 
       case 'strong':
       case 'b': {
-        // Note: Nested HTML marks (e.g., <b><i>text</i></b>) may not combine properly.
-        // The text will be extracted correctly, but marks from nested elements may not
-        // be merged. This is a known limitation of the current "partial" HTML support.
-        // For example, <b><i>text</i></b> may apply only the outer bold mark, not both bold and italic.
         const content = domNodesToJSON(element.childNodes, depth + 1);
         return content.map(c => {
           if (c.type === 'text') {
@@ -782,6 +814,96 @@ function parseToken(
 }
 
 /**
+ * Process an array of inline tokens (helper for nested HTML tags)
+ */
+function processInlineTokens(tokens: Token[]): JSONContent[] {
+  const content: JSONContent[] = [];
+  let i = 0;
+
+  while (i < tokens.length) {
+    const token = tokens[i];
+
+    if (token.type === 'text') {
+      if (token.content) {
+        content.push({
+          type: 'text',
+          text: token.content,
+        });
+      }
+      i++;
+    } else if (token.type === 'html_inline') {
+      // Check if it's an opening tag
+      const tagMatch = token.content.match(/^<(b|strong|i|em|s|strike|del|code)>$/i);
+
+      if (tagMatch) {
+        const tagName = tagMatch[1].toLowerCase();
+        let markType: MarkType | null = null;
+
+        switch (tagName) {
+          case 'b':
+          case 'strong':
+            markType = 'bold';
+            break;
+          case 'i':
+          case 'em':
+            markType = 'italic';
+            break;
+          case 's':
+          case 'strike':
+          case 'del':
+            markType = 'strike';
+            break;
+          case 'code':
+            markType = 'code';
+            break;
+        }
+
+        if (markType) {
+          // Find matching closing tag
+          const endTag = `</${tagName}>`;
+          let endIndex = i + 1;
+
+          while (endIndex < tokens.length) {
+            if (tokens[endIndex].type === 'html_inline' &&
+                tokens[endIndex].content.toLowerCase() === endTag) {
+              break;
+            }
+            endIndex++;
+          }
+
+          // Recursively process content between tags
+          const innerTokens = tokens.slice(i + 1, endIndex);
+          const innerContent = processInlineTokens(innerTokens);
+
+          // Apply mark to all text nodes
+          innerContent.forEach(node => {
+            if (node.type === 'text') {
+              node.marks = [...(node.marks || []), { type: markType }];
+            }
+          });
+
+          content.push(...innerContent);
+          i = endIndex + 1; // Skip past closing tag
+        } else {
+          // Unsupported tag, skip
+          i++;
+        }
+      } else {
+        // Not an opening tag (might be closing tag or other), skip
+        i++;
+      }
+    } else {
+      // Other token types like code_inline, process them directly
+      const parsed = parseInlineContent({ ...token, children: [token] } as Token);
+      content.push(...parsed);
+      i++;
+    }
+  }
+
+  return content;
+}
+
+/**
  * Parse inline content (text with marks like bold, italic, code, links)
  */
 function parseInlineContent(token: Token): JSONContent[] {
@@ -1021,34 +1143,32 @@ function parseInlineContent(token: Token): JSONContent[] {
           }
 
           if (markType) {
-            // Look for content until closing tag
-            let i = childIndex + 1;
-            const markedContent: JSONContent[] = [];
-            while (i < token.children.length) {
-              const nextChild = token.children[i];
+            // Collect all content until the closing tag, handling nested tags
+            const endTag = `</${tagName}>`;
+            let endIndex = childIndex + 1;
 
-              // Check if we hit the closing tag
-              if (nextChild.type === 'html_inline' &&
-                  nextChild.content.toLowerCase() === `</${tagName}>`) {
-                // Found closing tag - add all collected content with marks
-                if (markedContent.length > 0) {
-                  content.push(...markedContent);
-                }
-                childIndex = i; // Skip past the closing tag
+            // Find the closing tag
+            while (endIndex < token.children.length) {
+              if (token.children[endIndex].type === 'html_inline' &&
+                  token.children[endIndex].content.toLowerCase() === endTag) {
                 break;
               }
-
-              // Collect text content
-              if (nextChild.type === 'text' && nextChild.content) {
-                markedContent.push({
-                  type: 'text',
-                  text: nextChild.content,
-                  marks: [{ type: markType }],
-                });
-              }
-
-              i++;
+              endIndex++;
             }
+
+            // Process all content between opening and closing tags
+            const innerTokens = token.children.slice(childIndex + 1, endIndex);
+            const processedContent = processInlineTokens(innerTokens);
+
+            // Apply our mark to all text nodes
+            processedContent.forEach(node => {
+              if (node.type === 'text') {
+                node.marks = [...(node.marks || []), { type: markType }];
+              }
+            });
+
+            content.push(...processedContent);
+            childIndex = endIndex; // Skip past the closing tag
           } else if (tagName === 'u') {
             // For unsupported tags like underline, collect text without marks
             let i = childIndex + 1;

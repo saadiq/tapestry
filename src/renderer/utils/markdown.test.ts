@@ -244,18 +244,52 @@ describe('markdown utils', () => {
         expect(json.content![0].content![2].marks![0].type).toBe('bold');
       });
 
-      it('should handle nested HTML tags', () => {
+      it('should handle nested HTML tags and combine marks', () => {
         const markdown = '<b><i>Bold and italic</i></b>';
         const json = markdownToJSON(markdown);
 
-        // Note: DOM parser should handle nested tags, but the marks might not combine perfectly
-        // This test documents current behavior - at minimum we should get a paragraph with text
         expect(json.content![0].type).toBe('paragraph');
         expect(json.content![0].content).toBeDefined();
         expect(json.content![0].content!.length).toBeGreaterThan(0);
-        // The text should be extracted even if marks aren't perfect
-        const hasText = json.content![0].content!.some(c => c.text?.includes('Bold and italic'));
-        expect(hasText).toBe(true);
+
+        // Find the text node
+        const textNode = json.content![0].content!.find(c => c.text?.includes('Bold and italic'));
+        expect(textNode).toBeDefined();
+
+        // Should have both bold and italic marks
+        expect(textNode!.marks).toBeDefined();
+        expect(textNode!.marks!.length).toBe(2);
+        expect(textNode!.marks!.some(m => m.type === 'bold')).toBe(true);
+        expect(textNode!.marks!.some(m => m.type === 'italic')).toBe(true);
+      });
+
+      it('should handle nested HTML tags in reverse order', () => {
+        const markdown = '<i><b>Italic and bold</b></i>';
+        const json = markdownToJSON(markdown);
+
+        const textNode = json.content![0].content!.find(c => c.text?.includes('Italic and bold'));
+        expect(textNode).toBeDefined();
+
+        // Should have both marks regardless of nesting order
+        expect(textNode!.marks).toBeDefined();
+        expect(textNode!.marks!.length).toBe(2);
+        expect(textNode!.marks!.some(m => m.type === 'bold')).toBe(true);
+        expect(textNode!.marks!.some(m => m.type === 'italic')).toBe(true);
+      });
+
+      it('should handle triple nested HTML tags', () => {
+        const markdown = '<b><i><s>Bold, italic and strike</s></i></b>';
+        const json = markdownToJSON(markdown);
+
+        const textNode = json.content![0].content!.find(c => c.text?.includes('Bold, italic and strike'));
+        expect(textNode).toBeDefined();
+
+        // Should have all three marks
+        expect(textNode!.marks).toBeDefined();
+        expect(textNode!.marks!.length).toBe(3);
+        expect(textNode!.marks!.some(m => m.type === 'bold')).toBe(true);
+        expect(textNode!.marks!.some(m => m.type === 'italic')).toBe(true);
+        expect(textNode!.marks!.some(m => m.type === 'strike')).toBe(true);
       });
 
       it('should skip unsupported HTML tags', () => {
@@ -587,6 +621,20 @@ describe('markdown utils', () => {
       // The important thing is it doesn't crash - content may vary based on environment
       expect(jsonStr).toBeDefined();
       expect(jsonStr.length).toBeGreaterThan(0);
+    });
+
+    it('should handle malformed HTML gracefully', () => {
+      const markdown = '<b>Unclosed bold tag and <i>unclosed italic';
+      const json = markdownToJSON(markdown);
+
+      // Should still produce valid output even with malformed HTML
+      expect(json.type).toBe('doc');
+      expect(json.content).toBeDefined();
+      expect(json.content!.length).toBeGreaterThan(0);
+
+      // The text should be extracted even if tags are malformed
+      const jsonStr = JSON.stringify(json);
+      expect(jsonStr).toContain('Unclosed bold tag');
     });
   });
 
