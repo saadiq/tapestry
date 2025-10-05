@@ -30,6 +30,13 @@ Tapestry solves this by providing a flexible, desktop-first workspace where you 
 - **Auto-save with dirty state tracking**: Never lose your work
 - **Real-time file watching**: See external changes immediately
 
+### Markdown Features
+- **Standard markdown syntax**: Headers, bold, italic, lists, links, images, code blocks
+- **GitHub Flavored Markdown**: Tables, strikethrough, task lists (coming soon)
+- **Syntax highlighting**: Code blocks with language detection
+- **Partial HTML support**: Basic formatting tags (`<b>`, `<i>`, `<code>`, etc.) and block elements (`<div>`, `<p>`, etc.)
+  - *Note: HTML support is partial - inline styles and advanced formatting are not preserved*
+
 ### Modern Desktop Experience
 - **Native file dialogs**: Works like a desktop app should
 - **Theme support**: Light and dark modes with DaisyUI
