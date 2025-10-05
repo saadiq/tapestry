@@ -15,6 +15,102 @@ interface EditorComponentProps {
   editable?: boolean;
 }
 
+/**
+ * EditorComponent - Dual-mode editor with markdown and WYSIWYG views
+ *
+ * Content Flow & State Management:
+ * ================================
+ *
+ * This component manages complex state transitions between markdown and WYSIWYG modes
+ * while preserving user intent and avoiding destructive normalization.
+ *
+ * Key Refs and Their Purpose:
+ * ---------------------------
+ * 1. rawContentRef: Stores the original, unnormalized content from file load
+ *    - Updated on: External content changes (file loads) that are NOT self-triggered
+ *    - Purpose: Allows restoration of original formatting when switching back from WYSIWYG
+ *              if user didn't make any edits
+ *
+ * 2. hasWysiwygEditsRef: Tracks whether user has edited content in WYSIWYG mode
+ *    - Set to true: When user types/edits in WYSIWYG mode
+ *    - Reset to false: When new content loads from parent (file change)
+ *    - Purpose: Determines if we should restore rawContentRef or keep normalized content
+ *              when switching from WYSIWYG → markdown
+ *
+ * 3. selfTriggeredChangeRef: Prevents overwriting rawContentRef during normalization
+ *    - Set to true: Before calling onContentLoaded (which normalizes content)
+ *    - Reset to false: After processing content change in effect
+ *    - Purpose: Distinguishes between external content changes (file loads) and
+ *              self-triggered changes (normalization), preventing raw content from
+ *              being overwritten by normalized version
+ *
+ * 4. prevViewModeRef: Tracks previous view mode to detect transitions
+ *    - Purpose: Enables detection of markdown → WYSIWYG and WYSIWYG → markdown transitions
+ *
+ * 5. prevContentRef: Tracks previous content to detect changes
+ *    - Purpose: Avoids unnecessary re-rendering and processing when content hasn't changed
+ *
+ * State Flow Scenarios:
+ * --------------------
+ *
+ * Scenario 1: File Load
+ * - content prop changes → hasContentChanged = true
+ * - selfTriggeredChangeRef = false (external change)
+ * - rawContentRef = new content (stores original)
+ * - hasWysiwygEditsRef = false (reset edit tracking)
+ * - If in WYSIWYG mode: content displayed via TipTap
+ * - If in markdown mode: content displayed as-is
+ *
+ * Scenario 2: Markdown Mode Editing
+ * - User types in MarkdownEditor
+ * - onUpdate called with new content
+ * - rawContentRef unchanged (already has raw content)
+ * - No normalization occurs
+ *
+ * Scenario 3: Switch Markdown → WYSIWYG (No Prior Edits)
+ * - handleMarkdownToWysiwyg() called
+ * - Content converted to TipTap JSON via markdownToJSON
+ * - wrappedOnContentLoaded may be called by useEditor
+ * - selfTriggeredChangeRef = true (prevents rawContentRef overwrite)
+ * - Content displayed in WYSIWYG, but rawContentRef preserved
+ *
+ * Scenario 4: Editing in WYSIWYG Mode
+ * - User types in TipTap editor
+ * - wrappedOnUpdate called → hasWysiwygEditsRef = true
+ * - Content normalized through TipTap HTML → markdown conversion
+ * - Edit flag indicates user has modified content
+ *
+ * Scenario 5: Switch WYSIWYG → Markdown (With Edits)
+ * - handleWysiwygToMarkdown() called
+ * - hasWysiwygEditsRef = true
+ * - Keep current (normalized) content
+ * - Do NOT restore rawContentRef
+ *
+ * Scenario 6: Switch WYSIWYG → Markdown (No Edits)
+ * - handleWysiwygToMarkdown() called
+ * - hasWysiwygEditsRef = false
+ * - Restore rawContentRef via onUpdate
+ * - Original formatting preserved
+ *
+ * Scenario 7: Content Change While in WYSIWYG
+ * - content prop changes (e.g., file reload)
+ * - hasWysiwygEditsRef reset to false
+ * - rawContentRef updated (if not self-triggered)
+ * - Content synced to TipTap editor
+ *
+ * Race Conditions Handled:
+ * ------------------------
+ * - Rapid view mode switching: viewModeRef ensures keyboard shortcuts use current mode
+ * - Echo updates: selfTriggeredChangeRef prevents self-triggered updates from overwriting raw content
+ * - Concurrent edits and mode switches: hasWysiwygEditsRef tracks user intent
+ *
+ * Key Design Decisions:
+ * --------------------
+ * - Viewing in WYSIWYG is non-destructive (no normalization on view)
+ * - Normalization only occurs when user explicitly edits in WYSIWYG mode
+ * - Original formatting preserved when possible (no edits in WYSIWYG)
+ * - User intent (edits) takes precedence over format preservation
+ */
 export const EditorComponent = ({
   content = '',
   onUpdate,
