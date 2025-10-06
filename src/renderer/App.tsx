@@ -327,7 +327,7 @@ function AppContent() {
           } else {
             // Track save completion for file watcher
             trackSaveStart(capturedState.filePath);
-            setTimeout(() => trackSaveEnd(capturedState.filePath), 50);
+            setTimeout(() => trackSaveEnd(capturedState.filePath), TIMING_CONFIG.SAVE_EVENT_TRACKING_DELAY_MS);
 
             // Only clear dirty state if still on the same file
             if (fileContentRef.current.filePath === capturedState.filePath) {

@@ -14,9 +14,10 @@ export const TIMING_CONFIG = {
   /**
    * File watcher debounce delay in milliseconds
    * Time to ignore file watcher events after our own save operations
-   * @default 500ms
+   * Increased to 1000ms to provide safer margin for slow I/O (network drives, HDDs)
+   * @default 1000ms (1 second)
    */
-  FILE_WATCHER_DEBOUNCE_MS: 500,
+  FILE_WATCHER_DEBOUNCE_MS: 1000,
 
   /**
    * Window blur save debounce in milliseconds
@@ -55,6 +56,14 @@ export const TIMING_CONFIG = {
    * @default 50 entries
    */
   SAVE_TRACKING_CLEANUP_THRESHOLD: 50,
+
+  /**
+   * Save event tracking delay in milliseconds
+   * Delay after save completion before removing from activeSaves tracking map
+   * Allows file system events to settle before we stop ignoring file watcher events
+   * @default 50ms
+   */
+  SAVE_EVENT_TRACKING_DELAY_MS: 50,
 
   /**
    * Toast display durations by type
