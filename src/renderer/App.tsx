@@ -18,12 +18,10 @@ import { useFileContent } from './hooks/useFileContent';
 import { fileSystemService } from './services/fileSystemService';
 import type { FileWatcherEvent } from '../shared/types/fileSystem';
 import { normalizePath, getDirectoryPath, isPathWithinDirectory } from './utils/pathUtils';
+import { TIMING_CONFIG } from '../shared/config/timing';
 
-// Constants for auto-save and file operations
-const FILE_WATCHER_DEBOUNCE_MS = 500; // Delay after save before re-enabling file watcher
-const LARGE_FILE_TOAST_THRESHOLD_BYTES = 10240; // 10KB - show "saving..." toast for larger files
-const LARGE_FILE_WARNING_THRESHOLD_BYTES = 5_242_880; // 5MB - warn before loading very large files
-const BLUR_SAVE_DEBOUNCE_MS = 100; // Debounce window blur events to prevent rapid-fire saves
+// Track files we're currently saving to ignore file watcher events
+const activeSaves = new Map<string, number>(); // filePath -> timestamp
 
 // Inner component that has access to FileTreeContext and Toast
 function AppContent() {
@@ -41,30 +39,40 @@ function AppContent() {
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
   const [isLoadingFile, setIsLoadingFile] = useState(false);
 
-  // Track when we're saving to prevent file watcher from reloading during our own saves
-  const isSavingRef = useRef(false);
-
   // Previous path for save-before-switch
   const previousPathRef = useRef<string | null>(null);
 
-  // Save lifecycle callbacks to track save state
+  // Ref to track current file path for save callbacks
+  const currentFilePathRef = useRef<string | null>(null);
+
+  // Save lifecycle callbacks to track save state per file
   const handleBeforeSave = useCallback(() => {
-    isSavingRef.current = true;
+    const currentPath = currentFilePathRef.current;
+    if (currentPath) {
+      activeSaves.set(currentPath, Date.now());
+    }
   }, []);
 
   const handleAfterSave = useCallback((success: boolean) => {
-    // Reset saving flag after a short delay to ignore file watcher events from our own save
-    setTimeout(() => {
-      isSavingRef.current = false;
-    }, FILE_WATCHER_DEBOUNCE_MS);
+    const currentPath = currentFilePathRef.current;
+    if (currentPath) {
+      // Keep the save timestamp for debounce period to ignore file watcher events
+      setTimeout(() => {
+        activeSaves.delete(currentPath);
+      }, TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS);
+    }
   }, []);
 
   const fileContent = useFileContent({
     enableAutoSave: true,
-    autoSaveDelay: 1000,
+    autoSaveDelay: TIMING_CONFIG.AUTO_SAVE_DELAY_MS,
+    saveTimeout: TIMING_CONFIG.SAVE_TIMEOUT_MS,
     onBeforeSave: handleBeforeSave,
     onAfterSave: handleAfterSave
   });
+
+  // Update the ref when filePath changes
+  currentFilePathRef.current = fileContent.filePath;
 
   // Load file when activePath changes (with save-before-switch)
   useEffect(() => {
@@ -83,8 +91,8 @@ function AppContent() {
         setIsLoadingFile(true);
 
         // Show toast for larger files that might take time to save
-        const approxSizeInBytes = fileContent.content.length * 2;
-        const shouldShowToast = approxSizeInBytes > LARGE_FILE_TOAST_THRESHOLD_BYTES;
+        const fileSizeInBytes = new Blob([fileContent.content]).size;
+        const shouldShowToast = fileSizeInBytes > TIMING_CONFIG.LARGE_FILE_TOAST_THRESHOLD_BYTES;
         if (shouldShowToast) {
           toast.showInfo('Saving previous file...');
         }
@@ -92,10 +100,27 @@ function AppContent() {
         const saveResult = await fileContent.saveFileSync();
 
         if (!saveResult.success) {
-          // Save failed - show error and prevent switch
+          // Save failed - show error with retry button and prevent switch
           toast.showError(
             `Failed to save ${previousPathRef.current}: ${saveResult.error}. ` +
-            `Please fix the issue before switching files.`
+            `Please fix the issue before switching files.`,
+            0, // Don't auto-close
+            {
+              label: 'Retry',
+              onClick: async () => {
+                // Retry save
+                const retryResult = await fileContent.saveFileSync();
+                if (retryResult.success) {
+                  toast.showSuccess('File saved successfully');
+                  // Clear dirty state
+                  if (retryResult.filePath) {
+                    setFileDirty(retryResult.filePath, false);
+                  }
+                } else {
+                  toast.showError(`Retry failed: ${retryResult.error}`);
+                }
+              }
+            }
           );
           setIsLoadingFile(false);
 
@@ -116,7 +141,7 @@ function AppContent() {
       try {
         // Check file size before loading to warn about large files
         const fileNode = nodes.find(node => node.path === activePath);
-        if (fileNode?.size && fileNode.size > LARGE_FILE_WARNING_THRESHOLD_BYTES) {
+        if (fileNode?.size && fileNode.size > TIMING_CONFIG.LARGE_FILE_WARNING_THRESHOLD_BYTES) {
           const sizeMB = (fileNode.size / 1_048_576).toFixed(1);
           toast.showWarning(`Loading large file (${sizeMB} MB). This may take a moment...`);
         }
@@ -279,11 +304,11 @@ function AppContent() {
         // Only save if there's a dirty file open
         if (fileContent.isDirty && fileContent.filePath) {
           // Check file size to avoid blocking UI on large file saves
-          const approxSizeInBytes = fileContent.content.length * 2;
+          const fileSizeInBytes = new Blob([fileContent.content]).size;
 
           // For very large files (>5MB), defer the save to avoid UI jank during blur
           // User will be prompted to save on file switch or app close instead
-          if (approxSizeInBytes > LARGE_FILE_WARNING_THRESHOLD_BYTES) {
+          if (fileSizeInBytes > TIMING_CONFIG.LARGE_FILE_WARNING_THRESHOLD_BYTES) {
             console.log('[Blur Save] Skipping auto-save for large file on blur to prevent UI jank');
             return;
           }
@@ -294,7 +319,7 @@ function AppContent() {
             toast.showWarning(`Auto-save failed on window blur: ${result.error}`);
           }
         }
-      }, BLUR_SAVE_DEBOUNCE_MS);
+      }, TIMING_CONFIG.BLUR_SAVE_DEBOUNCE_MS);
     };
 
     window.addEventListener('blur', handleWindowBlur);
@@ -343,9 +368,6 @@ function AppContent() {
     if (!rootPath) return;
 
     const handleFileChange = async (event?: FileWatcherEvent) => {
-      // Skip if we're currently saving
-      if (isSavingRef.current) return;
-
       // Use refs to get latest values without causing effect re-runs
       const currentActivePath = activePathRef.current;
       const currentFileContent = fileContentRef.current;
@@ -353,6 +375,13 @@ function AppContent() {
 
       // If active file was modified externally
       if (event?.path === currentActivePath) {
+        // Skip if we're currently saving this specific file
+        const saveTimestamp = activeSaves.get(currentActivePath);
+        if (saveTimestamp && Date.now() - saveTimestamp < TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS) {
+          // This is likely our own save, ignore it
+          return;
+        }
+
         if (currentFileContent.isDirty) {
           currentToast.showWarning(
             'File was modified externally. Your unsaved changes may conflict. ' +

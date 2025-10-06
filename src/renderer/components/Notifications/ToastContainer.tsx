@@ -1,17 +1,19 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { Toast, ToastType } from './Toast';
+import { Toast, ToastType, ToastAction } from './Toast';
+import { TIMING_CONFIG } from '../../../shared/config/timing';
 
 interface ToastMessage {
   id: string;
   message: string;
   type: ToastType;
   duration?: number;
+  action?: ToastAction;
 }
 
 interface ToastContextValue {
-  showToast: (message: string, type: ToastType, duration?: number) => void;
+  showToast: (message: string, type: ToastType, duration?: number, action?: ToastAction) => void;
   showSuccess: (message: string, duration?: number) => void;
-  showError: (message: string, duration?: number) => void;
+  showError: (message: string, duration?: number, action?: ToastAction) => void;
   showInfo: (message: string, duration?: number) => void;
   showWarning: (message: string, duration?: number) => void;
 }
@@ -33,24 +35,24 @@ interface ToastProviderProps {
 export function ToastProvider({ children }: ToastProviderProps) {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const showToast = useCallback((message: string, type: ToastType, duration = 3000) => {
+  const showToast = useCallback((message: string, type: ToastType, duration?: number, action?: ToastAction) => {
     const id = `toast-${Date.now()}-${Math.random()}`;
-    setToasts((prev) => [...prev, { id, message, type, duration }]);
+    setToasts((prev) => [...prev, { id, message, type, duration, action }]);
   }, []);
 
-  const showSuccess = useCallback((message: string, duration = 3000) => {
+  const showSuccess = useCallback((message: string, duration = TIMING_CONFIG.TOAST_DURATION.SUCCESS_MS) => {
     showToast(message, 'success', duration);
   }, [showToast]);
 
-  const showError = useCallback((message: string, duration = 5000) => {
-    showToast(message, 'error', duration);
+  const showError = useCallback((message: string, duration = TIMING_CONFIG.TOAST_DURATION.ERROR_MS, action?: ToastAction) => {
+    showToast(message, 'error', duration, action);
   }, [showToast]);
 
-  const showInfo = useCallback((message: string, duration = 3000) => {
+  const showInfo = useCallback((message: string, duration = TIMING_CONFIG.TOAST_DURATION.INFO_MS) => {
     showToast(message, 'info', duration);
   }, [showToast]);
 
-  const showWarning = useCallback((message: string, duration = 4000) => {
+  const showWarning = useCallback((message: string, duration = TIMING_CONFIG.TOAST_DURATION.WARNING_MS) => {
     showToast(message, 'warning', duration);
   }, [showToast]);
 
@@ -71,6 +73,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
               message={toast.message}
               type={toast.type}
               duration={toast.duration}
+              action={toast.action}
               onClose={() => removeToast(toast.id)}
             />
           ))}

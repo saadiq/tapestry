@@ -24,8 +24,8 @@ describe('pathUtils', () => {
       expect(normalizePath('/Users/test//')).toBe('/Users/test');
     });
 
-    it('should handle empty string', () => {
-      expect(normalizePath('')).toBe('');
+    it('should throw error for empty string', () => {
+      expect(() => normalizePath('')).toThrow('Path cannot be null, undefined, or empty');
     });
 
     it('should handle single slash', () => {
@@ -60,8 +60,8 @@ describe('pathUtils', () => {
       expect(getDirectoryPath('file.md')).toBeNull();
     });
 
-    it('should return null for empty string', () => {
-      expect(getDirectoryPath('')).toBeNull();
+    it('should throw error for empty string', () => {
+      expect(() => getDirectoryPath('')).toThrow('File path cannot be null, undefined, or empty');
     });
 
     it('should handle Windows drive root', () => {
@@ -126,11 +126,10 @@ describe('pathUtils', () => {
       expect(isPathWithinDirectory('/Users/test/../other/file.md', '/Users/test')).toBe(true);
     });
 
-    it('should handle empty strings', () => {
-      expect(isPathWithinDirectory('', '/Users/test')).toBe(false);
-      // Empty parent path: all paths start with empty string
-      expect(isPathWithinDirectory('/Users/test/file.md', '')).toBe(true);
-      expect(isPathWithinDirectory('', '')).toBe(true);
+    it('should throw error for empty strings', () => {
+      expect(() => isPathWithinDirectory('', '/Users/test')).toThrow('Child path cannot be null, undefined, or empty');
+      expect(() => isPathWithinDirectory('/Users/test/file.md', '')).toThrow('Parent path cannot be null, undefined, or empty');
+      expect(() => isPathWithinDirectory('', '')).toThrow('Child path cannot be null, undefined, or empty');
     });
 
     it('should handle root directory', () => {

@@ -265,7 +265,7 @@ export function useFileContent(
       onBeforeSave, onAfterSave, saveTimeout]);
 
   /**
-   * Update file content with cache-aware auto-save
+   * Update file content with auto-save timer
    */
   const updateContent = useCallback(
     (newContent: string) => {
@@ -280,16 +280,28 @@ export function useFileContent(
 
       // Set new auto-save timer if enabled
       if (enableAutoSave && currentFilePathRef.current) {
-        // Capture the file path when setting the timer to validate before saving (Fix #2)
+        // Capture both the file path AND content when setting the timer
+        // This prevents race conditions where content changes before timer fires
         const capturedPath = currentFilePathRef.current;
+        const capturedContent = newContent;
+
         autoSaveTimerRef.current = setTimeout(() => {
-          // Only save if still on the same file (prevents saving cached content to wrong file)
+          // Only save if still on the same file (prevents saving to wrong file)
           if (currentFilePathRef.current === capturedPath) {
-            saveFile(capturedPath).catch((error) => {
-              console.error('[AutoSave] Failed for', capturedPath, ':', error);
+            // Use setState to get the latest content at save time
+            // This ensures we save the most recent edits, not the captured snapshot
+            setState((currentState) => {
+              // Double-check we're still on the same file and content is dirty
+              if (currentState.filePath === capturedPath && currentState.isDirty) {
+                // Save with the latest content
+                saveFile(capturedPath).catch((error) => {
+                  console.error('[AutoSave] Failed for', capturedPath, ':', error);
+                });
+              }
+              return currentState; // No state change
             });
           } else {
-            // Log when auto-save is skipped due to file switch (Fix #2: Silent Skip)
+            // Log when auto-save is skipped due to file switch
             console.log('[AutoSave] Skipped auto-save for', capturedPath, '- user switched to', currentFilePathRef.current);
           }
         }, autoSaveDelay);
