@@ -49,16 +49,28 @@ function AppContent() {
   const handleBeforeSave = useCallback(() => {
     const currentPath = currentFilePathRef.current;
     if (currentPath) {
-      activeSaves.set(currentPath, Date.now());
+      // Normalize path for consistent map keys across platforms
+      const normalizedPath = normalizePath(currentPath);
+      activeSaves.set(normalizedPath, Date.now());
     }
   }, []);
 
   const handleAfterSave = useCallback((success: boolean) => {
     const currentPath = currentFilePathRef.current;
     if (currentPath) {
+      const normalizedPath = normalizePath(currentPath);
       // Keep the save timestamp for debounce period to ignore file watcher events
       setTimeout(() => {
-        activeSaves.delete(currentPath);
+        activeSaves.delete(normalizedPath);
+
+        // Clean up stale entries older than 5 seconds to prevent memory growth
+        const now = Date.now();
+        const maxAge = 5000; // 5 seconds
+        for (const [path, timestamp] of activeSaves.entries()) {
+          if (now - timestamp > maxAge) {
+            activeSaves.delete(path);
+          }
+        }
       }, TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS);
     }
   }, []);
@@ -373,10 +385,15 @@ function AppContent() {
       const currentFileContent = fileContentRef.current;
       const currentToast = toastRef.current;
 
+      // Normalize paths for cross-platform comparison (Windows vs Unix)
+      const normalizedEventPath = event?.path ? normalizePath(event.path) : null;
+      const normalizedActivePath = currentActivePath ? normalizePath(currentActivePath) : null;
+
       // If active file was modified externally
-      if (event?.path === currentActivePath) {
+      if (normalizedEventPath && normalizedActivePath && normalizedEventPath === normalizedActivePath) {
         // Skip if we're currently saving this specific file
-        const saveTimestamp = activeSaves.get(currentActivePath);
+        // Use normalized path for lookup in activeSaves map
+        const saveTimestamp = activeSaves.get(normalizedActivePath);
         if (saveTimestamp && Date.now() - saveTimestamp < TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS) {
           // This is likely our own save, ignore it
           return;

@@ -296,6 +296,8 @@ export function useFileContent(
                 // Save with the latest content
                 saveFile(capturedPath).catch((error) => {
                   console.error('[AutoSave] Failed for', capturedPath, ':', error);
+                  // Notify callbacks that auto-save failed
+                  onAfterSave?.(false);
                 });
               }
               return currentState; // No state change
