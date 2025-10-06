@@ -13,14 +13,14 @@ import { sanitizeLinkUrl, sanitizeImageUrl } from './urlSanitizer';
  * Create a configured markdown-it parser instance
  * Configuration:
  * - 'default' preset with standard markdown features
- * - html: false - Disables raw HTML for security (prevents XSS)
+ * - html: true - Enables raw HTML parsing (with sanitization in conversion)
  * - breaks: true - Converts line breaks to <br> tags
  * - Table support enabled for GFM tables
  * Note: Syntax highlighting is handled by TipTap's CodeBlockLowlight, not markdown-it
  */
 export const createMarkdownParser = (): MarkdownIt => {
   const md = new MarkdownIt('default', {
-    html: false,
+    html: true,
     breaks: true,
   });
 
@@ -131,6 +131,528 @@ interface JSONContent {
 }
 
 /**
+ * Cached DOMParser instance for performance
+ */
+let cachedDOMParser: DOMParser | null = null;
+
+/**
+ * Parse HTML string to TipTap JSON using DOM parser
+ * This handles complex HTML structures safely
+ */
+function parseHTMLToJSON(html: string): JSONContent[] {
+  // Check if DOMParser is available (it should be in the renderer process)
+  if (typeof DOMParser !== 'undefined') {
+    try {
+      // Reuse DOMParser instance for performance
+      if (!cachedDOMParser) {
+        cachedDOMParser = new DOMParser();
+      }
+      const doc = cachedDOMParser.parseFromString(html, 'text/html');
+
+      // Check for parse errors
+      const parseErrors = doc.getElementsByTagName('parsererror');
+      if (parseErrors.length > 0) {
+        // If parsing failed, fall back to simple parser
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('DOMParser encountered a parse error, falling back to simple parser:', {
+            error: parseErrors[0]?.textContent,
+            html: html.substring(0, 100) // Log first 100 chars for debugging
+          });
+        }
+        return parseSimpleHTMLToJSON(html);
+      }
+
+      // Convert DOM nodes to TipTap JSON
+      return domNodesToJSON(doc.body.childNodes);
+    } catch (error) {
+      // If DOMParser throws an error, fall back to simple parser
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('DOMParser error, falling back to simple parser:', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          html: html.substring(0, 100) // Log first 100 chars for debugging
+        });
+      }
+      return parseSimpleHTMLToJSON(html);
+    }
+  } else {
+    // Fallback for Node/test environments - use simple parsing
+    // First check if it's simple inline HTML
+    if (!html.includes('<div') && !html.includes('<p>') && !html.includes('<h')) {
+      return parseSimpleHTMLToJSON(html);
+    }
+
+    // For complex HTML in test environment, just extract text
+    return parseSimpleHTMLToJSON(html);
+  }
+}
+
+/**
+ * Type for HTML pattern matching
+ */
+interface HTMLPattern {
+  regex: RegExp;
+  mark: MarkType | 'underline';
+}
+
+/**
+ * HTML tag patterns for inline elements
+ * IMPORTANT: Returns new RegExp instances each time to avoid state issues with the 'g' flag.
+ * RegExp objects with 'g' flag maintain state via lastIndex property, so sharing them
+ * between multiple parse operations would cause incorrect matches.
+ */
+const getHTMLPatterns = (): HTMLPattern[] => [
+  { regex: /<b>([\s\S]*?)<\/b>/gi, mark: 'bold' },
+  { regex: /<strong>([\s\S]*?)<\/strong>/gi, mark: 'bold' },
+  { regex: /<i>([\s\S]*?)<\/i>/gi, mark: 'italic' },
+  { regex: /<em>([\s\S]*?)<\/em>/gi, mark: 'italic' },
+  { regex: /<s>([\s\S]*?)<\/s>/gi, mark: 'strike' },
+  { regex: /<strike>([\s\S]*?)<\/strike>/gi, mark: 'strike' },
+  { regex: /<del>([\s\S]*?)<\/del>/gi, mark: 'strike' },
+  { regex: /<code>([\s\S]*?)<\/code>/gi, mark: 'code' },
+  { regex: /<u>([\s\S]*?)<\/u>/gi, mark: 'underline' },
+];
+
+/**
+ * Parse simple inline HTML tags (for backward compatibility)
+ */
+function parseSimpleHTMLToJSON(html: string): JSONContent[] {
+  const result: JSONContent[] = [];
+  const patterns = getHTMLPatterns();
+
+  // Process HTML string segment by segment
+  let remaining = html;
+
+  while (remaining.length > 0) {
+    let earliestMatch: { index: number; length: number; content: string; mark: string } | null = null;
+    let earliestIndex = Infinity;
+
+    // Find the earliest matching HTML tag
+    for (const pattern of patterns) {
+      pattern.regex.lastIndex = 0; // Reset regex
+      const match = pattern.regex.exec(remaining);
+      if (match && match.index < earliestIndex) {
+        earliestIndex = match.index;
+        earliestMatch = {
+          index: match.index,
+          length: match[0].length,
+          content: match[1],
+          mark: pattern.mark,
+        };
+      }
+    }
+
+    if (earliestMatch) {
+      // Safeguard: If match has zero length, break to prevent infinite loop
+      if (earliestMatch.length === 0) {
+        if (remaining) {
+          result.push({
+            type: 'text',
+            text: remaining,
+          });
+        }
+        break;
+      }
+
+      // Add plain text before the match
+      if (earliestMatch.index > 0) {
+        const plainText = remaining.substring(0, earliestMatch.index);
+        if (plainText) {
+          result.push({
+            type: 'text',
+            text: plainText,
+          });
+        }
+      }
+
+      // Add the marked text (skip underline as TipTap doesn't have it by default)
+      if (earliestMatch.content && earliestMatch.mark !== 'underline') {
+        // Check if the content contains nested HTML tags
+        const nestedPatterns = getHTMLPatterns();
+        const hasNestedTags = nestedPatterns.some(p => {
+          return p.regex.test(earliestMatch.content);
+        });
+
+        if (hasNestedTags) {
+          // Recursively parse nested content
+          const nestedContent = parseSimpleHTMLToJSON(earliestMatch.content);
+          // Add the current mark to all text nodes in the nested content
+          nestedContent.forEach(node => {
+            if (node.type === 'text' && earliestMatch.mark !== 'underline') {
+              node.marks = [...(node.marks || []), { type: earliestMatch.mark }];
+            }
+          });
+          result.push(...nestedContent);
+        } else {
+          // No nested tags, add as simple marked text
+          result.push({
+            type: 'text',
+            text: earliestMatch.content,
+            marks: [{ type: earliestMatch.mark }],
+          });
+        }
+      } else if (earliestMatch.content) {
+        // For underline or unsupported marks, just add as plain text
+        result.push({
+          type: 'text',
+          text: earliestMatch.content,
+        });
+      }
+
+      // Move past this match and ensure we're making progress
+      const originalLength = remaining.length;
+      remaining = remaining.substring(earliestMatch.index + earliestMatch.length);
+
+      // Safety: If we didn't make progress, bail out to prevent infinite loop
+      if (remaining.length >= originalLength) {
+        // Not advancing, add any remaining text and break
+        if (remaining) {
+          result.push({
+            type: 'text',
+            text: remaining,
+          });
+        }
+        break;
+      }
+    } else {
+      // No more matches, add remaining text
+      if (remaining) {
+        result.push({
+          type: 'text',
+          text: remaining,
+        });
+      }
+      break;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Convert DOM nodes to TipTap JSON format
+ * @param nodes - The DOM nodes to convert
+ * @param depth - Current recursion depth
+ */
+function domNodesToJSON(nodes: NodeListOf<ChildNode>, depth: number = 0): JSONContent[] {
+  // Check if we're in a browser environment
+  if (typeof Node === 'undefined') {
+    return [];
+  }
+
+  const result: JSONContent[] = [];
+
+  for (const node of Array.from(nodes)) {
+    const jsonNode = domNodeToJSON(node, depth);
+    if (jsonNode) {
+      if (Array.isArray(jsonNode)) {
+        result.push(...jsonNode);
+      } else {
+        result.push(jsonNode);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Sanitize element attributes to remove dangerous event handlers
+ */
+function sanitizeElementAttributes(element: Element): void {
+  const dangerousAttributes = [
+    'onclick', 'ondblclick', 'onmousedown', 'onmouseup', 'onmouseover',
+    'onmousemove', 'onmouseout', 'onmouseenter', 'onmouseleave',
+    'onload', 'onerror', 'onabort', 'onbeforeunload', 'onunload',
+    'onkeydown', 'onkeyup', 'onkeypress',
+    'onfocus', 'onblur', 'onchange', 'onsubmit', 'onreset',
+    'onscroll', 'onresize', 'oncontextmenu',
+    'ontouchstart', 'ontouchmove', 'ontouchend', 'ontouchcancel',
+    'onanimationstart', 'onanimationend', 'onanimationiteration',
+    'ontransitionstart', 'ontransitionend', 'ontransitionrun', 'ontransitioncancel',
+    'onpointerover', 'onpointerenter', 'onpointerdown', 'onpointermove',
+    'onpointerup', 'onpointercancel', 'onpointerout', 'onpointerleave',
+    'onwheel', 'ontoggle', 'oninput', 'onsearch',
+    'onformdata', 'onformchange', 'oninvalid', 'onsecuritypolicyviolation',
+    'onslotchange', 'oncopy', 'oncut', 'onpaste',
+  ];
+
+  for (const attr of dangerousAttributes) {
+    if (element.hasAttribute(attr)) {
+      element.removeAttribute(attr);
+    }
+  }
+}
+
+/**
+ * Maximum DOM traversal depth to prevent stack overflow
+ */
+const MAX_DOM_DEPTH = 100;
+
+/**
+ * Convert a single DOM node to TipTap JSON
+ * @param node - The DOM node to convert
+ * @param depth - Current recursion depth (used to prevent stack overflow)
+ */
+function domNodeToJSON(node: Node, depth: number = 0): JSONContent | JSONContent[] | null {
+  // Check if we're in a browser environment
+  if (typeof Node === 'undefined') {
+    return null;
+  }
+
+  // Depth limit safeguard to prevent stack overflow
+  if (depth >= MAX_DOM_DEPTH) {
+    return null;
+  }
+
+  // Text nodes
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent || '';
+    // Preserve text nodes including whitespace-only for proper spacing
+    // Only skip completely empty strings
+    if (!text) return null;
+
+    return {
+      type: 'text',
+      text: text,
+    };
+  }
+
+  // Element nodes
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const element = node as Element;
+
+    // Sanitize element attributes to remove event handlers
+    sanitizeElementAttributes(element);
+    const tagName = element.tagName.toLowerCase();
+
+    // Handle different HTML elements
+    switch (tagName) {
+      case 'p': {
+        const content = domNodesToJSON(element.childNodes, depth + 1);
+        if (content.length === 0) return null;
+        return {
+          type: 'paragraph',
+          content,
+        };
+      }
+
+      case 'h1':
+      case 'h2':
+      case 'h3':
+      case 'h4':
+      case 'h5':
+      case 'h6': {
+        const level = parseInt(tagName.slice(1));
+        const content = domNodesToJSON(element.childNodes, depth + 1);
+        if (content.length === 0) return null;
+        return {
+          type: 'heading',
+          attrs: { level },
+          content,
+        };
+      }
+
+      case 'ul': {
+        const items = Array.from(element.children)
+          .filter(child => child.tagName.toLowerCase() === 'li')
+          .map(li => ({
+            type: 'listItem' as NodeType,
+            content: [
+              {
+                type: 'paragraph' as NodeType,
+                content: domNodesToJSON(li.childNodes, depth + 1),
+              },
+            ],
+          }));
+
+        if (items.length === 0) return null;
+        return {
+          type: 'bulletList',
+          content: items,
+        };
+      }
+
+      case 'ol': {
+        const items = Array.from(element.children)
+          .filter(child => child.tagName.toLowerCase() === 'li')
+          .map(li => ({
+            type: 'listItem' as NodeType,
+            content: [
+              {
+                type: 'paragraph' as NodeType,
+                content: domNodesToJSON(li.childNodes, depth + 1),
+              },
+            ],
+          }));
+
+        if (items.length === 0) return null;
+        return {
+          type: 'orderedList',
+          content: items,
+        };
+      }
+
+      case 'blockquote': {
+        const content = domNodesToJSON(element.childNodes, depth + 1);
+        if (content.length === 0) return null;
+        return {
+          type: 'blockquote',
+          content: content.map(c =>
+            c.type === 'text' ? { type: 'paragraph' as NodeType, content: [c] } : c
+          ),
+        };
+      }
+
+      case 'code': {
+        const text = element.textContent || '';
+        return {
+          type: 'text',
+          text,
+          marks: [{ type: 'code' }],
+        };
+      }
+
+      case 'strong':
+      case 'b': {
+        const content = domNodesToJSON(element.childNodes, depth + 1);
+        return content.map(c => {
+          if (c.type === 'text') {
+            return {
+              ...c,
+              marks: [...(c.marks || []), { type: 'bold' as MarkType }],
+            };
+          }
+          return c;
+        });
+      }
+
+      case 'em':
+      case 'i': {
+        const content = domNodesToJSON(element.childNodes, depth + 1);
+        return content.map(c => {
+          if (c.type === 'text') {
+            return {
+              ...c,
+              marks: [...(c.marks || []), { type: 'italic' as MarkType }],
+            };
+          }
+          return c;
+        });
+      }
+
+      case 's':
+      case 'strike':
+      case 'del': {
+        const content = domNodesToJSON(element.childNodes, depth + 1);
+        return content.map(c => {
+          if (c.type === 'text') {
+            return {
+              ...c,
+              marks: [...(c.marks || []), { type: 'strike' as MarkType }],
+            };
+          }
+          return c;
+        });
+      }
+
+      case 'br': {
+        return {
+          type: 'hardBreak',
+        };
+      }
+
+      case 'hr': {
+        return {
+          type: 'horizontalRule',
+        };
+      }
+
+      case 'a': {
+        const href = element.getAttribute('href') || '';
+        const sanitizedHref = sanitizeLinkUrl(href);
+        if (!sanitizedHref) {
+          // If link is unsafe, just return the text content
+          return domNodesToJSON(element.childNodes, depth + 1);
+        }
+
+        const content = domNodesToJSON(element.childNodes, depth + 1);
+        return content.map(c => {
+          if (c.type === 'text') {
+            return {
+              ...c,
+              marks: [...(c.marks || []), {
+                type: 'link' as MarkType,
+                attrs: { href: sanitizedHref }
+              }],
+            };
+          }
+          return c;
+        });
+      }
+
+      case 'img': {
+        const src = element.getAttribute('src') || '';
+        const sanitizedSrc = sanitizeImageUrl(src);
+        if (!sanitizedSrc) return null;
+
+        const alt = element.getAttribute('alt') || '';
+        return {
+          type: 'image',
+          attrs: {
+            src: sanitizedSrc,
+            alt,
+          },
+        };
+      }
+
+      // Inline elements that should just pass through their content
+      case 'span':
+      case 'kbd':
+      case 'abbr':
+      case 'sub':
+      case 'sup': {
+        // For inline elements, just extract the text content
+        // In the future, we could add custom marks for these
+        const content = domNodesToJSON(element.childNodes, depth + 1);
+        return content;
+      }
+
+      // Block-level elements that we convert to paragraphs
+      case 'div':
+      case 'details':
+      case 'summary':
+      default: {
+        // For unsupported block elements, try to extract their content
+        // Wrap in paragraph if needed
+        const content = domNodesToJSON(element.childNodes, depth + 1);
+        if (content.length === 0) return null;
+
+        // If it's a block-level element and contains only text/inline content,
+        // wrap it in a paragraph
+        if (['div', 'details', 'summary'].includes(tagName)) {
+          const needsParagraph = content.every(c =>
+            c.type === 'text' || c.type === 'hardBreak' ||
+            (c.type === 'image')
+          );
+
+          if (needsParagraph && content.length > 0) {
+            return {
+              type: 'paragraph',
+              content,
+            };
+          }
+        }
+
+        // Otherwise, return the content directly
+        return content;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Convert markdown to TipTap JSON format
  * This bypasses the HTML → DOM parser → TipTap pipeline which causes issues with tables
  * (browser's DOM parser automatically adds tbody/thead which TipTap's schema rejects)
@@ -148,7 +670,15 @@ export const markdownToJSON = (markdown: string): JSONContent => {
   while (i < tokens.length) {
     const node = parseToken(tokens, i);
     if (node.content) {
-      result.content!.push(node.content);
+      // Handle both single nodes and arrays of nodes
+      if (!result.content) {
+        result.content = [];
+      }
+      if (Array.isArray(node.content)) {
+        result.content.push(...node.content);
+      } else {
+        result.content.push(node.content);
+      }
       i = node.nextIndex;
     } else {
       i++;
@@ -164,7 +694,7 @@ export const markdownToJSON = (markdown: string): JSONContent => {
 function parseToken(
   tokens: Token[],
   index: number
-): { content: JSONContent | null; nextIndex: number } {
+): { content: JSONContent | JSONContent[] | null; nextIndex: number } {
   const token = tokens[index];
 
   // Handle different token types
@@ -276,9 +806,123 @@ function parseToken(
       return parseTable(tokens, index);
     }
 
+    case 'html_block': {
+      // Parse block-level HTML - might return multiple blocks
+      const htmlContent = parseHTMLToJSON(token.content);
+
+      if (htmlContent.length === 0) {
+        return { content: null, nextIndex: index + 1 };
+      }
+
+      // If single block, return it directly
+      if (htmlContent.length === 1) {
+        return {
+          content: htmlContent[0],
+          nextIndex: index + 1,
+        };
+      }
+
+      // If multiple blocks, return them as an array
+      // The caller will handle flattening them
+      return {
+        content: htmlContent,
+        nextIndex: index + 1,
+      };
+    }
+
     default:
       return { content: null, nextIndex: index + 1 };
   }
+}
+
+/**
+ * Process an array of inline tokens (helper for nested HTML tags)
+ */
+function processInlineTokens(tokens: Token[]): JSONContent[] {
+  const content: JSONContent[] = [];
+  let i = 0;
+
+  while (i < tokens.length) {
+    const token = tokens[i];
+
+    if (token.type === 'text') {
+      if (token.content) {
+        content.push({
+          type: 'text',
+          text: token.content,
+        });
+      }
+      i++;
+    } else if (token.type === 'html_inline') {
+      // Check if it's an opening tag
+      const tagMatch = token.content.match(/^<(b|strong|i|em|s|strike|del|code)>$/i);
+
+      if (tagMatch) {
+        const tagName = tagMatch[1].toLowerCase();
+        let markType: MarkType | null = null;
+
+        switch (tagName) {
+          case 'b':
+          case 'strong':
+            markType = 'bold';
+            break;
+          case 'i':
+          case 'em':
+            markType = 'italic';
+            break;
+          case 's':
+          case 'strike':
+          case 'del':
+            markType = 'strike';
+            break;
+          case 'code':
+            markType = 'code';
+            break;
+        }
+
+        if (markType) {
+          // Find matching closing tag
+          const endTag = `</${tagName}>`;
+          let endIndex = i + 1;
+
+          while (endIndex < tokens.length) {
+            if (tokens[endIndex].type === 'html_inline' &&
+                tokens[endIndex].content.toLowerCase() === endTag) {
+              break;
+            }
+            endIndex++;
+          }
+
+          // Recursively process content between tags
+          const innerTokens = tokens.slice(i + 1, endIndex);
+          const innerContent = processInlineTokens(innerTokens);
+
+          // Apply mark to all text nodes
+          innerContent.forEach(node => {
+            if (node.type === 'text') {
+              node.marks = [...(node.marks || []), { type: markType }];
+            }
+          });
+
+          content.push(...innerContent);
+          i = endIndex + 1; // Skip past closing tag
+        } else {
+          // Unsupported tag, skip
+          i++;
+        }
+      } else {
+        // Not an opening tag (might be closing tag or other), skip
+        i++;
+      }
+    } else {
+      // Other token types like code_inline, process them directly
+      const parsed = parseInlineContent({ ...token, children: [token] } as Token);
+      content.push(...parsed);
+      i++;
+    }
+  }
+
+  return content;
 }
 
 /**
@@ -470,6 +1114,107 @@ function parseInlineContent(token: Token): JSONContent[] {
             ...(title && { title }),
           },
         });
+        break;
+      }
+
+      case 'html_inline': {
+        // Handle HTML tags - they come as separate open/close tokens
+        const tagContent = child.content.toLowerCase();
+
+        // Handle self-closing <br> or <br/> tags
+        if (tagContent === '<br>' || tagContent === '<br/>' || tagContent === '<br />') {
+          content.push({
+            type: 'hardBreak',
+          });
+          break;
+        }
+
+        // Handle other inline HTML elements that need special treatment
+        // For kbd, span, abbr, sub, sup - we'll just pass them through as text
+        // since TipTap doesn't have native support for them
+        if (tagContent.match(/^<(kbd|span|abbr|sub|sup|details|summary)(\s[^>]*)?>$/)) {
+          // These tags will be handled as text for now
+          // We could potentially add custom marks/nodes for them in the future
+          break;
+        }
+
+        // Check if it's an opening tag for formatting
+        if (tagContent.match(/^<(b|strong|i|em|s|strike|del|code|u)>$/)) {
+          const tagName = tagContent.slice(1, -1);
+
+          // Find the matching closing tag and collect content between
+          let markType: MarkType | null = null;
+          switch (tagName) {
+            case 'b':
+            case 'strong':
+              markType = 'bold';
+              break;
+            case 'i':
+            case 'em':
+              markType = 'italic';
+              break;
+            case 's':
+            case 'strike':
+            case 'del':
+              markType = 'strike';
+              break;
+            case 'code':
+              markType = 'code';
+              break;
+            // Skip 'u' as TipTap doesn't support underline by default
+          }
+
+          if (markType) {
+            // Collect all content until the closing tag, handling nested tags
+            const endTag = `</${tagName}>`;
+            let endIndex = childIndex + 1;
+
+            // Find the closing tag
+            while (endIndex < token.children.length) {
+              if (token.children[endIndex].type === 'html_inline' &&
+                  token.children[endIndex].content.toLowerCase() === endTag) {
+                break;
+              }
+              endIndex++;
+            }
+
+            // Process all content between opening and closing tags
+            const innerTokens = token.children.slice(childIndex + 1, endIndex);
+            const processedContent = processInlineTokens(innerTokens);
+
+            // Apply our mark to all text nodes
+            processedContent.forEach(node => {
+              if (node.type === 'text') {
+                node.marks = [...(node.marks || []), { type: markType }];
+              }
+            });
+
+            content.push(...processedContent);
+            childIndex = endIndex; // Skip past the closing tag
+          } else if (tagName === 'u') {
+            // For unsupported tags like underline, collect text without marks
+            let i = childIndex + 1;
+            while (i < token.children.length) {
+              const nextChild = token.children[i];
+
+              if (nextChild.type === 'html_inline' &&
+                  nextChild.content.toLowerCase() === `</${tagName}>`) {
+                childIndex = i;
+                break;
+              }
+
+              if (nextChild.type === 'text' && nextChild.content) {
+                content.push({
+                  type: 'text',
+                  text: nextChild.content,
+                });
+              }
+
+              i++;
+            }
+          }
+        }
+        // Skip closing tags as they're handled above
         break;
       }
 

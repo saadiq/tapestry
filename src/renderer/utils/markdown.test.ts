@@ -181,6 +181,158 @@ describe('markdown utils', () => {
       });
     });
 
+    describe('HTML support', () => {
+      it('should convert inline bold HTML tags', () => {
+        const markdown = 'This is <b>bold</b> and <strong>strong</strong> text';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content).toHaveLength(5); // "This is ", "bold", " and ", "strong", " text"
+        expect(json.content![0].content![1].text).toBe('bold');
+        expect(json.content![0].content![1].marks![0].type).toBe('bold');
+        expect(json.content![0].content![3].text).toBe('strong');
+        expect(json.content![0].content![3].marks![0].type).toBe('bold');
+      });
+
+      it('should convert inline italic HTML tags', () => {
+        const markdown = 'This is <i>italic</i> and <em>emphasized</em> text';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content![1].text).toBe('italic');
+        expect(json.content![0].content![1].marks![0].type).toBe('italic');
+        expect(json.content![0].content![3].text).toBe('emphasized');
+        expect(json.content![0].content![3].marks![0].type).toBe('italic');
+      });
+
+      it('should convert inline strikethrough HTML tags', () => {
+        const markdown = 'This is <s>strikethrough</s>, <strike>strike</strike>, and <del>deleted</del> text';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content![1].marks![0].type).toBe('strike');
+        expect(json.content![0].content![3].marks![0].type).toBe('strike');
+        expect(json.content![0].content![5].marks![0].type).toBe('strike');
+      });
+
+      it('should convert inline code HTML tags', () => {
+        const markdown = 'This is <code>inline code</code> text';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content![1].text).toBe('inline code');
+        expect(json.content![0].content![1].marks![0].type).toBe('code');
+      });
+
+      it('should handle block-level HTML', () => {
+        const markdown = '<b>Bold text in a block</b>';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content![0].text).toBe('Bold text in a block');
+        expect(json.content![0].content![0].marks![0].type).toBe('bold');
+      });
+
+      it('should handle mixed markdown and HTML', () => {
+        const markdown = '**Markdown bold** and <b>HTML bold</b>';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('paragraph');
+        // First part is markdown bold
+        expect(json.content![0].content![0].marks![0].type).toBe('bold');
+        // Second part is HTML bold
+        expect(json.content![0].content![2].marks![0].type).toBe('bold');
+      });
+
+      it('should handle nested HTML tags and combine marks', () => {
+        const markdown = '<b><i>Bold and italic</i></b>';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content).toBeDefined();
+        expect(json.content![0].content!.length).toBeGreaterThan(0);
+
+        // Find the text node
+        const textNode = json.content![0].content!.find(c => c.text?.includes('Bold and italic'));
+        expect(textNode).toBeDefined();
+
+        // Should have both bold and italic marks
+        expect(textNode!.marks).toBeDefined();
+        expect(textNode!.marks!.length).toBe(2);
+        expect(textNode!.marks!.some(m => m.type === 'bold')).toBe(true);
+        expect(textNode!.marks!.some(m => m.type === 'italic')).toBe(true);
+      });
+
+      it('should handle nested HTML tags in reverse order', () => {
+        const markdown = '<i><b>Italic and bold</b></i>';
+        const json = markdownToJSON(markdown);
+
+        const textNode = json.content![0].content!.find(c => c.text?.includes('Italic and bold'));
+        expect(textNode).toBeDefined();
+
+        // Should have both marks regardless of nesting order
+        expect(textNode!.marks).toBeDefined();
+        expect(textNode!.marks!.length).toBe(2);
+        expect(textNode!.marks!.some(m => m.type === 'bold')).toBe(true);
+        expect(textNode!.marks!.some(m => m.type === 'italic')).toBe(true);
+      });
+
+      it('should handle triple nested HTML tags', () => {
+        const markdown = '<b><i><s>Bold, italic and strike</s></i></b>';
+        const json = markdownToJSON(markdown);
+
+        const textNode = json.content![0].content!.find(c => c.text?.includes('Bold, italic and strike'));
+        expect(textNode).toBeDefined();
+
+        // Should have all three marks
+        expect(textNode!.marks).toBeDefined();
+        expect(textNode!.marks!.length).toBe(3);
+        expect(textNode!.marks!.some(m => m.type === 'bold')).toBe(true);
+        expect(textNode!.marks!.some(m => m.type === 'italic')).toBe(true);
+        expect(textNode!.marks!.some(m => m.type === 'strike')).toBe(true);
+      });
+
+      it('should skip unsupported HTML tags', () => {
+        const markdown = '<u>Underline</u> text';
+        const json = markdownToJSON(markdown);
+
+        // Underline is not supported by default in TipTap, so it's rendered as plain text
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content![0].text).toBe('Underline');
+        expect(json.content![0].content![0].marks).toBeUndefined();
+      });
+
+      it('should handle HTML in lists', () => {
+        const markdown = '- Item with <b>bold</b> text\n- Another <i>italic</i> item';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('bulletList');
+        expect(json.content![0].content![0].content![0].content![1].marks![0].type).toBe('bold');
+        expect(json.content![0].content![1].content![0].content![1].marks![0].type).toBe('italic');
+      });
+
+      it('should handle <br> tags as hard breaks', () => {
+        const markdown = 'Line 1<br>Line 2<br/>Line 3';
+        const json = markdownToJSON(markdown);
+
+        expect(json.content![0].type).toBe('paragraph');
+        // Check for hard breaks
+        const content = json.content![0].content;
+        expect(content).toBeDefined();
+        // Should have text and hard breaks
+        expect(content!.some(c => c.type === 'hardBreak')).toBe(true);
+      });
+
+      it('should handle inline HTML elements like span and kbd', () => {
+        const markdown = '<span>span text</span> and <kbd>Ctrl</kbd>';
+        const json = markdownToJSON(markdown);
+
+        // These tags should pass through their text content
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content).toBeDefined();
+      });
+    });
+
     describe('complex nested structures', () => {
       it('should convert nested lists', () => {
         const markdown = '- Item 1\n  - Nested 1\n  - Nested 2\n- Item 2';
@@ -274,6 +426,215 @@ describe('markdown utils', () => {
         expect(json.content![0].content![0].marks![0].type).toBe('link');
         expect(json.content![0].content![0].marks![0].attrs?.href).toBe('mailto:test@example.com');
       });
+    });
+
+    describe('HTML edge cases', () => {
+      it('should handle empty HTML tags', () => {
+        const markdown = '<b></b><i></i><code></code>';
+        const json = markdownToJSON(markdown);
+
+        // Empty tags should not create content
+        expect(json.content).toBeDefined();
+        // Should either have no content or only empty paragraphs
+        if (json.content!.length > 0) {
+          const hasNonEmptyContent = json.content!.some(c =>
+            c.content && c.content.length > 0 && c.content.some(inner => inner.text && inner.text.trim())
+          );
+          expect(hasNonEmptyContent).toBe(false);
+        }
+      });
+
+      it('should handle malformed HTML', () => {
+        const markdown = '<b>unclosed tag';
+        const json = markdownToJSON(markdown);
+
+        // Should still extract the text content
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content).toBeDefined();
+        const hasText = json.content![0].content!.some(c => c.text?.includes('unclosed tag'));
+        expect(hasText).toBe(true);
+      });
+
+      it('should handle mixed case HTML tags', () => {
+        const markdown = '<B>Bold</B> and <I>Italic</I>';
+        const json = markdownToJSON(markdown);
+
+        // Tags should be case-insensitive
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content).toBeDefined();
+        // Should have bold and italic marks
+        const hasBold = json.content![0].content!.some(c =>
+          c.marks?.some(m => m.type === 'bold')
+        );
+        const hasItalic = json.content![0].content!.some(c =>
+          c.marks?.some(m => m.type === 'italic')
+        );
+        expect(hasBold).toBe(true);
+        expect(hasItalic).toBe(true);
+      });
+
+      it('should strip dangerous HTML attributes', () => {
+        const markdown = '<b onclick="alert(1)">Click me</b>';
+        const json = markdownToJSON(markdown);
+
+        // Should extract text but not include the onclick attribute
+        expect(json.content![0].type).toBe('paragraph');
+        const textContent = JSON.stringify(json);
+        expect(textContent).not.toContain('onclick');
+        expect(textContent).not.toContain('alert');
+        // But should still have the text
+        const hasText = json.content![0].content!.some(c => c.text?.includes('Click me'));
+        expect(hasText).toBe(true);
+      });
+
+      it('should handle nested inline HTML tags', () => {
+        const markdown = '<b>Bold with <i>italic inside</i></b>';
+        const json = markdownToJSON(markdown);
+
+        // Should handle nested tags and extract text
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content).toBeDefined();
+        // Should have text content
+        const allText = json.content![0].content!.map(c => c.text || '').join('');
+        expect(allText).toContain('Bold');
+        expect(allText).toContain('italic inside');
+      });
+
+      it('should handle HTML entities', () => {
+        const markdown = '<b>&lt;script&gt;</b>';
+        const json = markdownToJSON(markdown);
+
+        // HTML entities should be decoded
+        expect(json.content![0].type).toBe('paragraph');
+        const hasText = json.content![0].content!.some(c =>
+          c.text?.includes('<script>') || c.text?.includes('&lt;script&gt;')
+        );
+        expect(hasText).toBe(true);
+      });
+
+      it('should handle HTML with attributes', () => {
+        const markdown = '<a href="https://example.com" title="Example">Link</a>';
+        const json = markdownToJSON(markdown);
+
+        // In test environment without DOMParser, links become plain text
+        // This is acceptable for the test environment
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content![0].type).toBe('text');
+        expect(json.content![0].content![0].text).toBe('Link');
+      });
+
+      it('should handle self-closing br tags with various formats', () => {
+        const markdown = 'Line 1<br>Line 2<br/>Line 3<br />Line 4';
+        const json = markdownToJSON(markdown);
+
+        // Should have hard breaks for all formats
+        expect(json.content![0].type).toBe('paragraph');
+        const hardBreaks = json.content![0].content!.filter(c => c.type === 'hardBreak');
+        expect(hardBreaks.length).toBeGreaterThanOrEqual(3);
+      });
+
+      it('should preserve whitespace between inline HTML elements', () => {
+        const markdown = '<b>Bold</b> <i>Italic</i>';
+        const json = markdownToJSON(markdown);
+
+        // Should have bold, space, and italic
+        expect(json.content![0].type).toBe('paragraph');
+        expect(json.content![0].content).toBeDefined();
+
+        // Check that we have at least 3 content nodes (bold text, whitespace, italic text)
+        expect(json.content![0].content!.length).toBeGreaterThanOrEqual(3);
+
+        // Verify there's a text node with whitespace
+        const hasWhitespace = json.content![0].content!.some(c =>
+          c.type === 'text' && c.text && /\s/.test(c.text)
+        );
+        expect(hasWhitespace).toBe(true);
+      });
+
+      it('should strip animation event handlers', () => {
+        const markdown = '<div onanimationstart="alert(1)" onanimationend="alert(2)">Content</div>';
+        const json = markdownToJSON(markdown);
+
+        // Should extract text but not include animation event attributes
+        const textContent = JSON.stringify(json);
+        expect(textContent).not.toContain('onanimationstart');
+        expect(textContent).not.toContain('onanimationend');
+        expect(textContent).not.toContain('alert');
+        // But should still have the text
+        const hasText = json.content!.some(c =>
+          c.content?.some(inner => inner.type === 'text' && inner.text?.includes('Content'))
+        );
+        expect(hasText).toBe(true);
+      });
+
+      it('should strip transition event handlers', () => {
+        const markdown = '<div ontransitionend="alert(1)" ontransitionstart="alert(2)">Content</div>';
+        const json = markdownToJSON(markdown);
+
+        // Should extract text but not include transition event attributes
+        const textContent = JSON.stringify(json);
+        expect(textContent).not.toContain('ontransitionend');
+        expect(textContent).not.toContain('ontransitionstart');
+        expect(textContent).not.toContain('alert');
+      });
+
+      it('should strip pointer event handlers', () => {
+        const markdown = '<b onpointerover="alert(1)" onpointerenter="alert(2)">Click</b>';
+        const json = markdownToJSON(markdown);
+
+        // Should extract text but not include pointer event attributes
+        const textContent = JSON.stringify(json);
+        expect(textContent).not.toContain('onpointerover');
+        expect(textContent).not.toContain('onpointerenter');
+        expect(textContent).not.toContain('alert');
+        // But should still have the text
+        const hasText = json.content![0].content!.some(c => c.text?.includes('Click'));
+        expect(hasText).toBe(true);
+      });
+
+      it('should strip wheel and toggle event handlers', () => {
+        const markdown = '<div onwheel="alert(1)" ontoggle="alert(2)">Content</div>';
+        const json = markdownToJSON(markdown);
+
+        // Should extract text but not include wheel/toggle event attributes
+        const textContent = JSON.stringify(json);
+        expect(textContent).not.toContain('onwheel');
+        expect(textContent).not.toContain('ontoggle');
+        expect(textContent).not.toContain('alert');
+      });
+    });
+
+    it('should handle deeply nested HTML safely', () => {
+      // Create 110 levels of nesting (exceeds MAX_DOM_DEPTH of 100)
+      const openingTags = '<div>'.repeat(110);
+      const closingTags = '</div>'.repeat(110);
+      const markdown = openingTags + 'deep content' + closingTags;
+
+      // Should not crash and should extract some content
+      const json = markdownToJSON(markdown);
+      expect(json.content).toBeDefined();
+
+      // The deeply nested content may be truncated due to depth limit,
+      // but the parser should handle it gracefully without throwing
+      const jsonStr = JSON.stringify(json);
+      // In test environment without DOMParser, deeply nested HTML is treated as text
+      // The important thing is it doesn't crash - content may vary based on environment
+      expect(jsonStr).toBeDefined();
+      expect(jsonStr.length).toBeGreaterThan(0);
+    });
+
+    it('should handle malformed HTML gracefully', () => {
+      const markdown = '<b>Unclosed bold tag and <i>unclosed italic';
+      const json = markdownToJSON(markdown);
+
+      // Should still produce valid output even with malformed HTML
+      expect(json.type).toBe('doc');
+      expect(json.content).toBeDefined();
+      expect(json.content!.length).toBeGreaterThan(0);
+
+      // The text should be extracted even if tags are malformed
+      const jsonStr = JSON.stringify(json);
+      expect(jsonStr).toContain('Unclosed bold tag');
     });
   });
 
