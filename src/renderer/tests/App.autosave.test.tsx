@@ -54,14 +54,14 @@ describe('App - Auto-save Integration Tests', () => {
     vi.clearAllMocks();
     fileChangeCallback = undefined;
 
-    // Mock directory reading
-    vi.mocked(fileSystemService.fileSystemService.openDirectory).mockResolvedValue({
+    // Mock directory reading (direct mock assignment for bun test)
+    (fileSystemService.fileSystemService.openDirectory as any).mockResolvedValue({
       success: true,
       path: '/test/directory',
     });
 
-    // Default file content mocks
-    vi.mocked(fileSystemService.fileSystemService.readFile).mockImplementation(
+    // Default file content mocks (direct mock assignment for bun test)
+    (fileSystemService.fileSystemService.readFile as any).mockImplementation(
       async (path: string) => ({
         content: `Content of ${path}`,
         metadata: {
@@ -74,7 +74,7 @@ describe('App - Auto-save Integration Tests', () => {
       })
     );
 
-    vi.mocked(fileSystemService.fileSystemService.writeFile).mockResolvedValue({
+    (fileSystemService.fileSystemService.writeFile as any).mockResolvedValue({
       success: true,
     });
 

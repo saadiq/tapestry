@@ -43,7 +43,6 @@ interface UseFileContentReturn extends UseFileContentState {
   // State management
   clearError: () => void;
   clearAutoSaveTimer: () => void;
-  getCurrentState: () => UseFileContentState;
 }
 
 /**
@@ -78,10 +77,6 @@ export function useFileContent(
   const currentFilePathRef = useRef<string | null>(state.filePath);
   currentFilePathRef.current = state.filePath;
 
-  // Track current state to avoid stale closure issues (Fix #1)
-  const stateRef = useRef<UseFileContentState>(state);
-  stateRef.current = state;
-
   /**
    * Clear auto-save timer
    */
@@ -111,11 +106,12 @@ export function useFileContent(
         error: null,
         metadata: fileContent.metadata,
       });
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load file';
       setState((prev) => ({
         ...prev,
         loading: false,
-        error: error.message || 'Failed to load file',
+        error: errorMessage,
       }));
     }
   }, []);
@@ -170,11 +166,12 @@ export function useFileContent(
         onAfterSave?.(false);
         return false;
       }
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save file';
       setState((prev) => ({
         ...prev,
         saving: false,
-        error: error.message || 'Failed to save file',
+        error: errorMessage,
       }));
       onAfterSave?.(false);
       return false;
@@ -250,8 +247,8 @@ export function useFileContent(
           filePath
         };
       }
-    } catch (error: any) {
-      const errorMessage = error.message || 'Failed to save file';
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save file';
       setState((prev) => ({
         ...prev,
         saving: false,
@@ -338,13 +335,6 @@ export function useFileContent(
   }, []);
 
   /**
-   * Get current state (Fix #1: Avoid stale closures in async callbacks)
-   */
-  const getCurrentState = useCallback(() => {
-    return stateRef.current;
-  }, []);
-
-  /**
    * Clean up auto-save timer on unmount
    */
   useEffect(() => {
@@ -363,6 +353,5 @@ export function useFileContent(
     closeFile,
     clearError,
     clearAutoSaveTimer,
-    getCurrentState,
   };
 }

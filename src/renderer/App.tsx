@@ -22,6 +22,7 @@ import { normalizePath, getDirectoryPath, isPathWithinDirectory } from './utils/
 // Constants for auto-save and file operations
 const FILE_WATCHER_DEBOUNCE_MS = 500; // Delay after save before re-enabling file watcher
 const LARGE_FILE_TOAST_THRESHOLD_BYTES = 10240; // 10KB - show "saving..." toast for larger files
+const LARGE_FILE_WARNING_THRESHOLD_BYTES = 5_242_880; // 5MB - warn before loading very large files
 const BLUR_SAVE_DEBOUNCE_MS = 100; // Debounce window blur events to prevent rapid-fire saves
 
 // Inner component that has access to FileTreeContext and Toast
@@ -68,7 +69,11 @@ function AppContent() {
   // Load file when activePath changes (with save-before-switch)
   useEffect(() => {
     const loadFileWithSave = async () => {
-      if (!activePath) return;
+      // Clean up previous path ref when no file is open
+      if (!activePath) {
+        previousPathRef.current = null;
+        return;
+      }
 
       // Save previous file if it was dirty
       if (previousPathRef.current &&
@@ -109,6 +114,13 @@ function AppContent() {
       // Load the new file
       setIsLoadingFile(true);
       try {
+        // Check file size before loading to warn about large files
+        const fileNode = nodes.find(node => node.path === activePath);
+        if (fileNode?.size && fileNode.size > LARGE_FILE_WARNING_THRESHOLD_BYTES) {
+          const sizeMB = (fileNode.size / 1_048_576).toFixed(1);
+          toast.showWarning(`Loading large file (${sizeMB} MB). This may take a moment...`);
+        }
+
         await fileContent.loadFile(activePath);
         previousPathRef.current = activePath;
       } catch (error) {
@@ -266,6 +278,16 @@ function AppContent() {
       blurSaveTimeout = setTimeout(async () => {
         // Only save if there's a dirty file open
         if (fileContent.isDirty && fileContent.filePath) {
+          // Check file size to avoid blocking UI on large file saves
+          const approxSizeInBytes = fileContent.content.length * 2;
+
+          // For very large files (>5MB), defer the save to avoid UI jank during blur
+          // User will be prompted to save on file switch or app close instead
+          if (approxSizeInBytes > LARGE_FILE_WARNING_THRESHOLD_BYTES) {
+            console.log('[Blur Save] Skipping auto-save for large file on blur to prevent UI jank');
+            return;
+          }
+
           const result = await fileContent.saveFileSync();
           if (!result.success) {
             // Don't prevent blur, but show warning
