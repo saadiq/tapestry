@@ -5,6 +5,36 @@
 **Status**: Ready for Implementation
 **Priority**: High - Data safety is our #1 priority
 
+## Prerequisites: Codebase Audit
+
+**CRITICAL**: Before starting implementation, audit the current codebase to determine what already exists:
+
+### Audit Checklist
+1. **Toast System**:
+   - [ ] Check if `showWarning` method exists in ToastContainer
+   - [ ] Check if 'warning' variant exists in Toast component
+   - [ ] Document current toast variants available
+
+2. **useFileContent Hook**:
+   - [ ] Check if `saveFileSync` method already exists
+   - [ ] Document current save methods available
+   - [ ] Check if `isSavingRef` is already used
+
+3. **App.tsx State**:
+   - [ ] Document current cache implementation size
+   - [ ] Identify which lines contain cache logic
+   - [ ] Check if window blur handler exists
+
+4. **Test Structure**:
+   - [ ] Identify test file locations and naming conventions
+   - [ ] Check if App.cache.test.tsx exists
+   - [ ] Document bun test patterns used
+
+### After Audit
+- Update this plan based on findings
+- Mark tasks as "Already Done" if features exist
+- Adjust implementation approach accordingly
+
 ## Executive Summary
 
 We are simplifying Tapestry's document management by removing the complex multi-file caching system and implementing a straightforward auto-save approach. When users switch between files, unsaved changes will be automatically saved. If auto-save fails, we'll display clear error messages to prevent data loss.
@@ -388,7 +418,8 @@ function AppContent() {
 
         // Only show toast for files that might take time to save
         // Small files save so quickly the toast would be jarring
-        const shouldShowToast = fileContent.content.length > 10000; // ~10KB
+        const sizeInBytes = new Blob([fileContent.content]).size;
+        const shouldShowToast = sizeInBytes > 10240; // 10KB in bytes
         if (shouldShowToast) {
           toast.showInfo('Saving previous file...');
         }
@@ -618,20 +649,35 @@ Unlike file-switch saves which block on failure, window blur saves are **intenti
 ```typescript
 // Add to App.tsx after other effects
 useEffect(() => {
-  const handleWindowBlur = async () => {
-    // Only save if there's a dirty file open
-    if (fileContent.isDirty && fileContent.filePath) {
-      const result = await fileContent.saveFileSync();
-      if (!result.success) {
-        // Don't prevent blur, but show warning
-        // Use warning instead of error since we can't block the blur
-        toast.showWarning(`Auto-save failed on window blur: ${result.error}`);
-      }
+  let blurSaveTimeout: NodeJS.Timeout | null = null;
+
+  const handleWindowBlur = () => {
+    // Debounce rapid blur events (e.g., quick app switching)
+    if (blurSaveTimeout) {
+      clearTimeout(blurSaveTimeout);
     }
+
+    blurSaveTimeout = setTimeout(async () => {
+      // Only save if there's a dirty file open
+      if (fileContent.isDirty && fileContent.filePath) {
+        const result = await fileContent.saveFileSync();
+        if (!result.success) {
+          // Don't prevent blur, but show warning
+          // Use warning instead of error since we can't block the blur
+          toast.showWarning(`Auto-save failed on window blur: ${result.error}`);
+        }
+      }
+    }, 100); // 100ms debounce for rapid switching
   };
 
   window.addEventListener('blur', handleWindowBlur);
-  return () => window.removeEventListener('blur', handleWindowBlur);
+
+  return () => {
+    window.removeEventListener('blur', handleWindowBlur);
+    if (blurSaveTimeout) {
+      clearTimeout(blurSaveTimeout);
+    }
+  };
 }, [fileContent, toast]);
 ```
 
@@ -729,27 +775,29 @@ describe('Window blur auto-save', () => {
 
 ##### 1. `src/renderer/hooks/useFileContent.test.ts` (or appropriate location)
 ```typescript
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import { renderHook, act } from '@testing-library/react';
 import { useFileContent } from './useFileContent';
 import { fileSystemService } from '../services/fileSystemService';
 
-// Mock the service
-jest.mock('../services/fileSystemService');
+// Mock the service using bun's mock function
+const mockWriteFile = mock(() => Promise.resolve({ success: true }));
+const mockReadFile = mock(() => Promise.resolve({
+  content: 'initial content',
+  metadata: { size: 15, modified: new Date() }
+}));
+
+// Replace service methods
+fileSystemService.writeFile = mockWriteFile;
+fileSystemService.readFile = mockReadFile;
 
 describe('useFileContent - saveFileSync', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
-    jest.useRealTimers();
+    mockWriteFile.mockClear();
+    mockReadFile.mockClear();
   });
 
   it('saves immediately without debounce', async () => {
-    const mockWrite = jest.fn().mockResolvedValue({ success: true });
-    fileSystemService.writeFile = mockWrite;
-    fileSystemService.readFile = jest.fn().mockResolvedValue({
-      content: 'initial content',
-      metadata: { size: 15, modified: new Date() }
-    });
-
     const { result } = renderHook(() => useFileContent());
 
     // Load file
@@ -768,20 +816,16 @@ describe('useFileContent - saveFileSync', () => {
     });
 
     expect(saveResult.success).toBe(true);
-    expect(mockWrite).toHaveBeenCalledWith('/test.md', 'modified content');
+    expect(mockWriteFile).toHaveBeenCalledWith('/test.md', 'modified content');
     expect(result.current.isDirty).toBe(false);
   });
 
   it('returns detailed error information on failure', async () => {
-    fileSystemService.writeFile = jest.fn().mockResolvedValue({
+    // Update mock to return error
+    mockWriteFile.mockImplementation(() => Promise.resolve({
       success: false,
       error: 'Disk full'
-    });
-    fileSystemService.readFile = jest.fn().mockResolvedValue({
-      content: 'content',
-      metadata: { size: 7, modified: new Date() }
-    });
-
+    }));
     const { result } = renderHook(() => useFileContent());
 
     await act(async () => {
@@ -805,13 +849,8 @@ describe('useFileContent - saveFileSync', () => {
   });
 
   it('does not save if content is not dirty', async () => {
-    const mockWrite = jest.fn();
-    fileSystemService.writeFile = mockWrite;
-    fileSystemService.readFile = jest.fn().mockResolvedValue({
-      content: 'content',
-      metadata: { size: 7, modified: new Date() }
-    });
-
+    // Reset mock to return success
+    mockWriteFile.mockImplementation(() => Promise.resolve({ success: true }));
     const { result } = renderHook(() => useFileContent());
 
     await act(async () => {
@@ -824,315 +863,80 @@ describe('useFileContent - saveFileSync', () => {
     });
 
     expect(saveResult.success).toBe(true);
-    expect(mockWrite).not.toHaveBeenCalled();
+    expect(mockWriteFile).not.toHaveBeenCalled();
   });
 
-  it('cancels pending auto-save timer when saving synchronously', async () => {
-    jest.useFakeTimers();
-
-    const mockWrite = jest.fn().mockResolvedValue({ success: true });
-    fileSystemService.writeFile = mockWrite;
-    fileSystemService.readFile = jest.fn().mockResolvedValue({
-      content: 'content',
-      metadata: { size: 7, modified: new Date() }
-    });
-
-    const { result } = renderHook(() => useFileContent({
-      enableAutoSave: true,
-      autoSaveDelay: 1000
-    }));
-
-    await act(async () => {
-      await result.current.loadFile('/test.md');
-    });
-
-    // Trigger auto-save timer
-    act(() => {
-      result.current.updateContent('modified');
-    });
-
-    // Advance time partially
-    jest.advanceTimersByTime(500);
-
-    // Save synchronously
-    await act(async () => {
-      await result.current.saveFileSync();
-    });
-
-    // Advance past original auto-save time
-    jest.advanceTimersByTime(1000);
-
-    // Should only have been called once (by saveFileSync)
-    expect(mockWrite).toHaveBeenCalledTimes(1);
-
-    jest.useRealTimers();
+  // Note: Bun doesn't have built-in fake timers yet, this test would need adaptation
+  it.skip('cancels pending auto-save timer when saving synchronously', async () => {
+    // TODO: Implement when bun adds timer mocking support
+    // Or use a custom timer implementation for testing
+    // This test would verify that saveFileSync cancels any pending auto-save timer
   });
 });
 ```
 
-##### 2. `src/renderer/tests/App.autosave.test.tsx`
+##### 2. `src/renderer/tests/App.autosave.test.tsx` (simplified example)
 ```typescript
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import { render, fireEvent, waitFor, screen } from '@testing-library/react';
 import { act } from 'react-dom/test-utils';
 import App from '../App';
 import { fileSystemService } from '../services/fileSystemService';
 
-jest.mock('../services/fileSystemService');
-
 describe('App - Simplified Auto-save', () => {
+  // Mock service methods
+  const mockWriteFile = mock(() => Promise.resolve({ success: true }));
+
   beforeEach(() => {
-    jest.clearAllMocks();
-
-    // Setup default mocks
-    fileSystemService.readDirectory = jest.fn().mockResolvedValue({
-      success: true,
-      nodes: [
-        {
-          name: 'file1.md',
-          path: '/test/file1.md',
-          type: 'file',
-          children: null,
-          isExpanded: false
-        },
-        {
-          name: 'file2.md',
-          path: '/test/file2.md',
-          type: 'file',
-          children: null,
-          isExpanded: false
-        }
-      ]
-    });
-
-    fileSystemService.readFile = jest.fn().mockImplementation((path) => {
-      return Promise.resolve({
-        content: `Content of ${path}`,
-        metadata: { size: 100, modified: new Date() }
-      });
-    });
-
-    fileSystemService.writeFile = jest.fn().mockResolvedValue({ success: true });
-    fileSystemService.watchDirectory = jest.fn().mockResolvedValue({ success: true });
-    fileSystemService.unwatchDirectory = jest.fn().mockResolvedValue({ success: true });
+    mockWriteFile.mockClear();
+    // Setup other mocks as needed
+    fileSystemService.writeFile = mockWriteFile;
   });
 
   it('saves current file when switching to another file', async () => {
+    // Render app and simulate file switching
     const { container } = render(<App />);
 
-    // Open a directory first
-    await act(async () => {
-      await fileSystemService.openDirectory();
-    });
+    // ... setup and file modification ...
 
-    // Click first file
-    const file1 = await screen.findByText('file1.md');
-    await act(async () => {
-      fireEvent.click(file1);
-    });
-
-    // Wait for file to load
+    // Verify save was called when switching files
     await waitFor(() => {
-      const editor = container.querySelector('[contenteditable]');
-      expect(editor).toBeInTheDocument();
-    });
-
-    // Modify content
-    const editor = container.querySelector('[contenteditable]');
-    await act(async () => {
-      fireEvent.input(editor, {
-        target: { textContent: 'Modified content for file1' }
-      });
-    });
-
-    // Click second file
-    const file2 = await screen.findByText('file2.md');
-    await act(async () => {
-      fireEvent.click(file2);
-    });
-
-    // Verify file1 was saved
-    await waitFor(() => {
-      expect(fileSystemService.writeFile).toHaveBeenCalledWith(
+      expect(mockWriteFile).toHaveBeenCalledWith(
         '/test/file1.md',
         expect.stringContaining('Modified content')
       );
     });
-
-    // Verify file2 was loaded
-    expect(fileSystemService.readFile).toHaveBeenCalledWith('/test/file2.md');
   });
 
   it('shows error and prevents switch when save fails', async () => {
     // Setup save to fail
-    fileSystemService.writeFile = jest.fn().mockResolvedValue({
+    mockWriteFile.mockImplementation(() => Promise.resolve({
       success: false,
       error: 'Permission denied'
-    });
+    }));
 
-    const { container } = render(<App />);
-
-    // Open directory and first file
-    await act(async () => {
-      await fileSystemService.openDirectory();
-    });
-
-    const file1 = await screen.findByText('file1.md');
-    await act(async () => {
-      fireEvent.click(file1);
-    });
-
-    await waitFor(() => {
-      const editor = container.querySelector('[contenteditable]');
-      expect(editor).toBeInTheDocument();
-    });
-
-    // Modify content
-    const editor = container.querySelector('[contenteditable]');
-    await act(async () => {
-      fireEvent.input(editor, {
-        target: { textContent: 'Modified content' }
-      });
-    });
-
-    // Try to switch files
-    const file2 = await screen.findByText('file2.md');
-    await act(async () => {
-      fireEvent.click(file2);
-    });
+    // ... render and modify file ...
 
     // Should show error toast
     await waitFor(() => {
       expect(screen.getByText(/Failed to save.*Permission denied/)).toBeInTheDocument();
     });
 
-    // Should still be showing file1 content
-    expect(editor.textContent).toContain('Modified content');
-
-    // Should NOT have loaded file2
-    expect(fileSystemService.readFile).not.toHaveBeenCalledWith('/test/file2.md');
+    // Should remain on current file
   });
 
+  // Additional simplified test examples...
   it('does not save when switching if file is not dirty', async () => {
-    const { container } = render(<App />);
-
-    await act(async () => {
-      await fileSystemService.openDirectory();
-    });
-
-    const file1 = await screen.findByText('file1.md');
-    await act(async () => {
-      fireEvent.click(file1);
-    });
-
-    await waitFor(() => {
-      const editor = container.querySelector('[contenteditable]');
-      expect(editor).toBeInTheDocument();
-    });
-
-    // Don't modify content
-
-    // Switch to file2
-    const file2 = await screen.findByText('file2.md');
-    await act(async () => {
-      fireEvent.click(file2);
-    });
-
-    // Should NOT have called writeFile
-    expect(fileSystemService.writeFile).not.toHaveBeenCalled();
-
-    // Should have loaded file2
-    expect(fileSystemService.readFile).toHaveBeenCalledWith('/test/file2.md');
+    // ... test implementation ...
+    expect(mockWriteFile).not.toHaveBeenCalled();
   });
 
   it('handles external file changes correctly', async () => {
-    const { container } = render(<App />);
-
-    let fileChangeCallback: ((event: any) => void) | null = null;
-    window.electronAPI = {
-      fileSystem: {
-        onFileChange: (cb: (event: any) => void) => {
-          fileChangeCallback = cb;
-        },
-        removeFileChangeListener: jest.fn()
-      }
-    };
-
-    await act(async () => {
-      await fileSystemService.openDirectory();
-    });
-
-    const file1 = await screen.findByText('file1.md');
-    await act(async () => {
-      fireEvent.click(file1);
-    });
-
-    // Simulate external file change
-    await act(async () => {
-      fileChangeCallback?.({
-        path: '/test/file1.md',
-        type: 'change'
-      });
-    });
-
-    // Should reload the file
-    await waitFor(() => {
-      expect(fileSystemService.readFile).toHaveBeenCalledWith('/test/file1.md');
-    });
-
-    // Should show info toast
-    expect(screen.getByText(/File reloaded due to external changes/)).toBeInTheDocument();
+    // ... test implementation ...
   });
 
   it('warns about conflicts when external changes occur with dirty file', async () => {
-    const { container } = render(<App />);
-
-    let fileChangeCallback: ((event: any) => void) | null = null;
-    window.electronAPI = {
-      fileSystem: {
-        onFileChange: (cb: (event: any) => void) => {
-          fileChangeCallback = cb;
-        },
-        removeFileChangeListener: jest.fn()
-      }
-    };
-
-    await act(async () => {
-      await fileSystemService.openDirectory();
-    });
-
-    const file1 = await screen.findByText('file1.md');
-    await act(async () => {
-      fireEvent.click(file1);
-    });
-
-    await waitFor(() => {
-      const editor = container.querySelector('[contenteditable]');
-      expect(editor).toBeInTheDocument();
-    });
-
-    // Modify content
-    const editor = container.querySelector('[contenteditable]');
-    await act(async () => {
-      fireEvent.input(editor, {
-        target: { textContent: 'My changes' }
-      });
-    });
-
-    // Simulate external change
-    await act(async () => {
-      fileChangeCallback?.({
-        path: '/test/file1.md',
-        type: 'change'
-      });
-    });
-
-    // Should show warning
-    await waitFor(() => {
-      expect(screen.getByText(/File was modified externally.*conflict/)).toBeInTheDocument();
-    });
-
-    // Should NOT reload the file (preserve user's changes)
-    expect(fileSystemService.readFile).toHaveBeenCalledTimes(1); // Only initial load
+    // ... test implementation ...
   });
 });
 ```
