@@ -290,6 +290,26 @@ function AppContent() {
   const toastRef = useRef(toast);
   toastRef.current = toast;
 
+  // Refs for menu handlers to prevent listener re-registration
+  const handlersRef = useRef({
+    newFile: handleNewFile,
+    openFile: handleOpenFile,
+    openFolder: handleOpenFolder,
+    save: handleSave,
+    toggleSidebar: handleToggleSidebar,
+    find: handleFind
+  });
+
+  // Update handler refs when handlers change (doesn't trigger effects)
+  handlersRef.current = {
+    newFile: handleNewFile,
+    openFile: handleOpenFile,
+    openFolder: handleOpenFolder,
+    save: handleSave,
+    toggleSidebar: handleToggleSidebar,
+    find: handleFind
+  };
+
   // File watcher - uses refs for stability
   useEffect(() => {
     if (!rootPath) return;
@@ -332,41 +352,32 @@ function AppContent() {
     };
   }, [rootPath, loadDirectory]);
 
-  // Listen for menu events from main process
+  // Listen for menu events from main process - uses refs to prevent memory leak
   useEffect(() => {
-    const handleMenuNewFile = () => handleNewFile();
-    const handleMenuOpenFile = async () => {
-      await handleOpenFile();
-    };
-    const handleMenuOpenFolder = async () => {
-      await handleOpenFolder();
-    };
-    const handleMenuSave = () => handleSave();
-    const handleMenuToggleSidebar = () => handleToggleSidebar();
-    const handleMenuFind = () => handleFind();
+    if (!window.electron) return;
 
-    // Set up IPC listeners (requires preload script setup)
-    if (window.electron) {
-      window.electron.on('menu-new-file', handleMenuNewFile);
-      window.electron.on('menu-open-file', handleMenuOpenFile);
-      window.electron.on('menu-open-folder', handleMenuOpenFolder);
-      window.electron.on('menu-save', handleMenuSave);
-      window.electron.on('menu-toggle-sidebar', handleMenuToggleSidebar);
-      window.electron.on('menu-find', handleMenuFind);
-    }
+    // Create stable wrapper functions that read from refs
+    const wrappers = {
+      'menu-new-file': () => handlersRef.current.newFile(),
+      'menu-open-file': async () => await handlersRef.current.openFile(),
+      'menu-open-folder': async () => await handlersRef.current.openFolder(),
+      'menu-save': () => handlersRef.current.save(),
+      'menu-toggle-sidebar': () => handlersRef.current.toggleSidebar(),
+      'menu-find': () => handlersRef.current.find()
+    };
 
+    // Register all listeners
+    Object.entries(wrappers).forEach(([channel, handler]) => {
+      window.electron.on(channel as any, handler);
+    });
+
+    // Cleanup - remove all listeners
     return () => {
-      // Clean up listeners
-      if (window.electron) {
-        window.electron.removeListener('menu-new-file', handleMenuNewFile);
-        window.electron.removeListener('menu-open-file', handleMenuOpenFile);
-        window.electron.removeListener('menu-open-folder', handleMenuOpenFolder);
-        window.electron.removeListener('menu-save', handleMenuSave);
-        window.electron.removeListener('menu-toggle-sidebar', handleMenuToggleSidebar);
-        window.electron.removeListener('menu-find', handleMenuFind);
-      }
+      Object.entries(wrappers).forEach(([channel, handler]) => {
+        window.electron.removeListener(channel as any, handler);
+      });
     };
-  }, [handleNewFile, handleOpenFile, handleOpenFolder, handleSave, handleToggleSidebar, handleFind]);
+  }, []); // Empty deps - runs only once on mount
 
   return (
     <MainLayout
