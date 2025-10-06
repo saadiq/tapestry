@@ -26,6 +26,7 @@ interface UseFileContentState {
 interface UseFileContentOptions {
   autoSaveDelay?: number; // Delay in milliseconds before auto-saving (default: 300ms)
   enableAutoSave?: boolean; // Enable/disable auto-save (default: true)
+  saveTimeout?: number; // Timeout in milliseconds for save operations (default: 30000ms / 30s)
   onBeforeSave?: () => void; // Called before save starts (both auto and manual)
   onAfterSave?: (success: boolean) => void; // Called after save completes (both auto and manual)
 }
@@ -54,6 +55,7 @@ export function useFileContent(
   const {
     autoSaveDelay = 300,
     enableAutoSave = true,
+    saveTimeout = 30000, // 30 seconds default
     onBeforeSave,
     onAfterSave
   } = options;
@@ -182,6 +184,7 @@ export function useFileContent(
   /**
    * Save file immediately without debounce
    * Used when switching files to ensure data is persisted
+   * Includes timeout to prevent eternal hangs on slow I/O or network drives
    */
   const saveFileSync = useCallback(async (): Promise<SaveResult> => {
     // Clear any pending auto-save timer
@@ -210,7 +213,17 @@ export function useFileContent(
     setState((prev) => ({ ...prev, saving: true, error: null }));
 
     try {
-      const result = await fileSystemService.writeFile(filePath, state.content);
+      // Race the save operation against a timeout
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`Save operation timed out after ${saveTimeout}ms`));
+        }, saveTimeout);
+      });
+
+      const result = await Promise.race([
+        fileSystemService.writeFile(filePath, state.content),
+        timeoutPromise
+      ]);
 
       if (result.success) {
         setState((prev) => ({
@@ -252,7 +265,7 @@ export function useFileContent(
       };
     }
   }, [state.filePath, state.content, state.isDirty, clearAutoSaveTimer,
-      onBeforeSave, onAfterSave]);
+      onBeforeSave, onAfterSave, saveTimeout]);
 
   /**
    * Update file content with cache-aware auto-save

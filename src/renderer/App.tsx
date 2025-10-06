@@ -88,7 +88,8 @@ function AppContent() {
           );
           setIsLoadingFile(false);
 
-          // Revert the file selection in tree
+          // Revert the file selection in tree to keep user on the file with unsaved changes
+          // This prevents data loss by blocking the switch until save succeeds
           if (previousPathRef.current !== activePath) {
             setActiveFile(previousPathRef.current);
           }
@@ -112,6 +113,12 @@ function AppContent() {
       }
     };
 
+    // Only trigger load when activePath changes and differs from current file
+    // This guard prevents infinite loops when reverting selection after failed save:
+    // - Failed save triggers setActiveFile(previousPathRef.current)
+    // - previousPathRef.current === fileContent.filePath (hasn't changed yet)
+    // - activePath becomes previousPathRef.current
+    // - activePath === fileContent.filePath, so effect doesn't re-run
     if (activePath && activePath !== fileContent.filePath) {
       loadFileWithSave();
     }
