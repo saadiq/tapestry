@@ -5,7 +5,7 @@
 /**
  * Normalize a file path for consistent comparison and display
  * - Converts backslashes to forward slashes (Windows -> Unix-style)
- * - Removes trailing slashes
+ * - Removes trailing slashes (except for root directory)
  * - Returns empty string for invalid inputs instead of throwing
  *
  * @param path - The file path to normalize
@@ -14,6 +14,7 @@
  * @example
  * normalizePath('C:\\Users\\file.md') // 'C:/Users/file.md'
  * normalizePath('/path/to/dir/') // '/path/to/dir'
+ * normalizePath('/') // '/'
  * normalizePath('') // ''
  * normalizePath(null) // ''
  */
@@ -22,7 +23,9 @@ export function normalizePath(path: string): string {
     console.warn('normalizePath: received null, undefined, or empty path');
     return '';
   }
-  return path.replace(/\\/g, '/').replace(/\/+$/, '');
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  // Preserve root directory: if result is empty but original wasn't, it was a root path
+  return normalized === '' && path !== '' ? '/' : normalized;
 }
 
 /**

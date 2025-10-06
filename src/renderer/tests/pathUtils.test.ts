@@ -37,8 +37,8 @@ describe('pathUtils', () => {
     });
 
     it('should handle single slash', () => {
-      // Single slash gets trailing slash removed, resulting in empty string
-      expect(normalizePath('/')).toBe('');
+      // Single slash should be preserved as root directory
+      expect(normalizePath('/')).toBe('/');
     });
 
     it('should preserve relative paths', () => {
@@ -159,9 +159,9 @@ describe('pathUtils', () => {
     });
 
     it('should handle root directory', () => {
-      // Root path '/' normalizes to empty string, so this returns false now
-      expect(isPathWithinDirectory('/Users/test/file.md', '/')).toBe(false);
-      expect(isPathWithinDirectory('/file.md', '/')).toBe(false);
+      // Root path '/' is now preserved, so paths starting with '/' should match
+      expect(isPathWithinDirectory('/Users/test/file.md', '/')).toBe(true);
+      expect(isPathWithinDirectory('/file.md', '/')).toBe(true);
     });
   });
 });

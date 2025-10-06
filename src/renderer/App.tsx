@@ -177,16 +177,20 @@ function AppContent() {
         return;
       }
 
+      // Set switching flag immediately to prevent race conditions
+      isSwitchingFileRef.current = true;
+
       // Save previous file if it was dirty
       if (previousPathRef.current &&
           previousPathRef.current !== activePath &&
           fileContent.isDirty) {
 
-        isSwitchingFileRef.current = true;
         setIsLoadingFile(true);
 
         // Show toast for larger files that might take time to save
-        // Use approximate size (2 bytes per char for UTF-16) to avoid Blob creation overhead
+        // Approximate size calculation: Assumes UTF-16 encoding (2 bytes per character)
+        // This avoids expensive Blob creation while being reasonably accurate for most text.
+        // May slightly underestimate for emoji/complex Unicode (which use 4 bytes).
         const approxSizeInBytes = fileContent.content.length * 2;
         const shouldShowToast = approxSizeInBytes > TIMING_CONFIG.LARGE_FILE_TOAST_THRESHOLD_BYTES;
         if (shouldShowToast) {
@@ -234,7 +238,6 @@ function AppContent() {
       }
 
       // Load the new file
-      isSwitchingFileRef.current = true;
       setIsLoadingFile(true);
       try {
         // Check file size before loading to warn about large files
@@ -261,7 +264,11 @@ function AppContent() {
     // - previousPathRef.current === fileContent.filePath (hasn't changed yet)
     // - activePath becomes previousPathRef.current
     // - activePath === fileContent.filePath, so effect doesn't re-run
-    if (activePath && activePath !== fileContent.filePath) {
+    // Additional check: Don't re-trigger if we're switching back to the previous path
+    // (handles edge case where user rapidly clicks same file multiple times)
+    if (activePath &&
+        activePath !== fileContent.filePath &&
+        activePath !== previousPathRef.current) {
       loadFileWithSave();
     }
   }, [activePath, fileContent, setActiveFile, setFileDirty, toast, nodes]);
@@ -402,25 +409,34 @@ function AppContent() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [fileContent.isDirty]);
 
+  // Ref to track blur save timeouts to prevent memory leaks
+  const blurTimeoutsRef = useRef<NodeJS.Timeout[]>([]);
+
   // Auto-save on window blur - uses refs to avoid re-registration
   useEffect(() => {
-    const blurTimeouts: NodeJS.Timeout[] = [];
-
     const handleWindowBlur = () => {
       // Debounce rapid blur events (e.g., quick app switching)
       // Clear all pending timeouts before creating a new one
-      blurTimeouts.forEach(clearTimeout);
-      blurTimeouts.length = 0;
+      blurTimeoutsRef.current.forEach(clearTimeout);
+      blurTimeoutsRef.current = [];
+
+      // Capture file path at blur time to prevent stale closure issues
+      const capturedFilePath = fileContentRef.current.filePath;
 
       const timeout = setTimeout(async () => {
         // Use refs to get latest values
         const currentFileContent = fileContentRef.current;
         const currentToast = toastRef.current;
 
-        // Only save if there's a dirty file open
-        if (currentFileContent.isDirty && currentFileContent.filePath) {
+        // Only save if still on the same file that was dirty when blur occurred
+        // This prevents saving to the wrong file if user switches files during debounce
+        if (currentFileContent.isDirty &&
+            currentFileContent.filePath &&
+            currentFileContent.filePath === capturedFilePath) {
           // Check file size to avoid blocking UI on large file saves
-          // Use approximate size (2 bytes per char for UTF-16) to avoid Blob creation overhead
+          // Approximate size calculation: Assumes UTF-16 encoding (2 bytes per character)
+          // This avoids expensive Blob creation while being reasonably accurate for most text.
+          // May slightly underestimate for emoji/complex Unicode (which use 4 bytes).
           const approxSizeInBytes = currentFileContent.content.length * 2;
 
           // For very large files (>5MB), defer the save to avoid UI jank during blur
@@ -449,14 +465,15 @@ function AppContent() {
         }
       }, TIMING_CONFIG.BLUR_SAVE_DEBOUNCE_MS);
 
-      blurTimeouts.push(timeout);
+      blurTimeoutsRef.current.push(timeout);
     };
 
     window.addEventListener('blur', handleWindowBlur);
 
     return () => {
       window.removeEventListener('blur', handleWindowBlur);
-      blurTimeouts.forEach(clearTimeout);
+      blurTimeoutsRef.current.forEach(clearTimeout);
+      blurTimeoutsRef.current = [];
     };
   }, []); // Empty deps - register once, use refs for values
 

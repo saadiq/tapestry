@@ -49,8 +49,14 @@ export function Toast({ message, type, onClose, duration = TIMING_CONFIG.TOAST_D
       {action && (
         <button
           className="btn btn-sm btn-ghost"
-          onClick={() => {
-            action.onClick();
+          onClick={async () => {
+            try {
+              await action.onClick();
+            } catch (error) {
+              console.error('[Toast Action] Error executing action:', error);
+              // Don't close toast on error so user can retry
+              return;
+            }
             onClose();
           }}
           aria-label={action.label}
