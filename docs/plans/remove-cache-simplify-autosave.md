@@ -395,7 +395,11 @@ function AppContent() {
           setIsLoadingFile(false);
 
           // Revert the file selection in tree
-          setActiveFile(previousPathRef.current);
+          // The activePath !== fileContent.filePath guard prevents infinite loop
+          // because fileContent.filePath is already previousPathRef.current
+          if (previousPathRef.current !== activePath) {
+            setActiveFile(previousPathRef.current);
+          }
           return;
         }
 
@@ -572,57 +576,125 @@ describe('App - Auto-save on file switch', () => {
 
 ---
 
-### Task 4: Update File Tree Store for Save Coordination
-**Files**: `src/renderer/store/fileTreeStore.tsx`
-**Time Estimate**: 1 hour
-**Priority**: Do Fourth
+### Task 4: ~~Update File Tree Store~~ (SKIP THIS TASK)
+**Decision**: Skip this task entirely. Handle everything in App.tsx for simplicity.
+
+After reviewing the architecture, adding save coordination to the FileTreeStore would add unnecessary complexity. The simpler approach in Task 3, where we handle save-before-switch entirely in App.tsx, is better because:
+- It keeps all save logic in one place
+- Avoids adding business logic to the store
+- The store should focus on tree state management only
+
+**Note**: The `activePath !== fileContent.filePath` guard in the useEffect will prevent infinite loops when we revert the file selection after a failed save.
+
+---
+
+### Task 3.5: Add Window Blur Auto-Save (NEW)
+**Files**: `src/renderer/App.tsx`
+**Time Estimate**: 30 minutes
+**Priority**: Do After Task 3
 
 #### Requirements
-1. Add `beforeFileSwitch` callback prop
-2. Call callback before changing active file
-3. Allow callback to prevent switch by returning false
+1. Save current file when window loses focus
+2. Don't prevent blur if save fails (just warn)
+3. Only save if file is dirty
 
 #### Implementation
 ```typescript
-// fileTreeStore.tsx
-
-interface FileTreeContextValue {
-  // ... existing properties ...
-  openFile: (path: string, options?: { skipSaveCheck?: boolean }) => Promise<boolean>;
-  setBeforeFileSwitch: (callback: (newPath: string) => Promise<boolean>) => void;
-}
-
-export function FileTreeProvider({ children }: FileTreeProviderProps) {
-  // ... existing state ...
-
-  const beforeFileSwitchRef = useRef<((newPath: string) => Promise<boolean>) | null>(null);
-
-  const setBeforeFileSwitch = useCallback((callback: (newPath: string) => Promise<boolean>) => {
-    beforeFileSwitchRef.current = callback;
-  }, []);
-
-  const openFile = useCallback(async (
-    path: string,
-    options?: { skipSaveCheck?: boolean }
-  ): Promise<boolean> => {
-    // Call before switch callback if not skipped
-    if (!options?.skipSaveCheck && beforeFileSwitchRef.current) {
-      const canSwitch = await beforeFileSwitchRef.current(path);
-      if (!canSwitch) {
-        return false; // Switch prevented
+// Add to App.tsx after other effects
+useEffect(() => {
+  const handleWindowBlur = async () => {
+    // Only save if there's a dirty file open
+    if (fileContent.isDirty && fileContent.filePath) {
+      const result = await fileContent.saveFileSync();
+      if (!result.success) {
+        // Don't prevent blur, but show warning
+        // Use warning instead of error since we can't block the blur
+        toast.showWarning(`Auto-save failed on window blur: ${result.error}`);
       }
     }
+  };
 
-    setActivePath(path);
-    setSelectedPath(path);
-    return true;
-  }, []);
-
-  // ... rest of implementation
-}
+  window.addEventListener('blur', handleWindowBlur);
+  return () => window.removeEventListener('blur', handleWindowBlur);
+}, [fileContent, toast]);
 ```
 
-However, after reviewing the architecture, I realize this approach adds unnecessary complexity. The simpler approach in Task 3 where we handle save-before-switch entirely in App.tsx is better. Skip this task.
+#### Testing
+```typescript
+// App.test.tsx
+describe('Window blur auto-save', () => {
+  it('saves dirty file when window loses focus', async () => {
+    const { container } = render(<App />);
+
+    // Load and modify a file
+    await act(async () => {
+      await loadTestFile();
+      modifyContent('new content');
+    });
+
+    // Simulate window blur
+    await act(async () => {
+      window.dispatchEvent(new Event('blur'));
+    });
+
+    // Verify save was called
+    expect(fileSystemService.writeFile).toHaveBeenCalledWith(
+      '/test/file.md',
+      'new content'
+    );
+  });
+
+  it('shows warning when blur save fails', async () => {
+    fileSystemService.writeFile = jest.fn().mockResolvedValue({
+      success: false,
+      error: 'Permission denied'
+    });
+
+    const { container } = render(<App />);
+
+    // Load and modify a file
+    await act(async () => {
+      await loadTestFile();
+      modifyContent('new content');
+    });
+
+    // Simulate window blur
+    await act(async () => {
+      window.dispatchEvent(new Event('blur'));
+    });
+
+    // Should show warning toast (not error)
+    expect(screen.getByText(/Auto-save failed on window blur.*Permission denied/)).toBeInTheDocument();
+    expect(screen.getByText(/Auto-save failed/)).toHaveClass('alert-warning');
+  });
+
+  it('does not save on blur if file is not dirty', async () => {
+    const mockWrite = jest.fn();
+    fileSystemService.writeFile = mockWrite;
+
+    const { container } = render(<App />);
+
+    // Load file but don't modify
+    await act(async () => {
+      await loadTestFile();
+    });
+
+    // Simulate window blur
+    await act(async () => {
+      window.dispatchEvent(new Event('blur'));
+    });
+
+    // Should NOT have called writeFile
+    expect(mockWrite).not.toHaveBeenCalled();
+  });
+});
+```
+
+#### Manual Testing
+1. Open a file and make changes
+2. Switch to another application (Cmd+Tab or Alt+Tab)
+3. Verify file saves automatically
+4. Test with save failure (read-only file) - verify warning appears
 
 ---
 
@@ -1109,6 +1181,14 @@ The auto-save system in Tapestry is designed for simplicity and data safety:
 
 ## Testing Strategy
 
+### Existing Test Updates
+**IMPORTANT**: Before making changes, run the existing test suite to establish a baseline.
+
+1. **Run existing tests first**: `bun test` - document any failures
+2. **Update breaking tests**: Tests that expect cache behavior will need updates
+3. **Delete obsolete tests**: Remove `src/renderer/tests/App.cache.test.tsx` entirely
+4. **Add new tests**: For simplified auto-save behavior
+
 ### Unit Tests (TDD Approach)
 1. Write test first for each new method
 2. Implement minimum code to pass
@@ -1118,12 +1198,20 @@ The auto-save system in Tapestry is designed for simplicity and data safety:
 1. Test full save-before-switch flow
 2. Test error scenarios (permission denied, disk full)
 3. Test file watcher interactions
+4. Test window blur auto-save
+
+### Test Files to Update/Delete
+- **DELETE**: `src/renderer/tests/App.cache.test.tsx` - entire file tests removed cache
+- **UPDATE**: Any test that mocks or expects `fileContentCacheRef`
+- **ADD**: Tests for `saveFileSync` method
+- **ADD**: Tests for window blur handler
 
 ### Manual Testing Checklist
 - [ ] Open app with multiple markdown files
 - [ ] Edit file1, switch to file2 - verify file1 saves
 - [ ] Edit file1, switch to file2 with save error - verify stays on file1
 - [ ] Edit file1, wait 1 second - verify auto-saves
+- [ ] Edit file1, switch to another app (Cmd+Tab) - verify saves on blur
 - [ ] Edit file1, close app - verify warning appears
 - [ ] External edit to clean file - verify reloads
 - [ ] External edit to dirty file - verify warning appears
@@ -1143,17 +1231,21 @@ The auto-save system in Tapestry is designed for simplicity and data safety:
 1. ✅ Remove cache interfaces and refs from App.tsx (30 min)
 2. ✅ Simplify file loading effect (1 hr)
 3. ✅ Implement save-before-switch logic (1 hr)
-4. ✅ Run tests, fix issues (30 min)
+4. ✅ Add window blur auto-save handler (30 min)
+5. ✅ Run tests, fix issues (30 min)
 
 **Commit**: "refactor: remove file content cache system"
+**Commit**: "feat: add auto-save on window blur"
 
 ### Phase 3: Polish (Day 2)
 1. ✅ Simplify file watcher logic (30 min)
 2. ✅ Update beforeunload handler (15 min)
-3. ✅ Add remaining integration tests (1 hr)
-4. ✅ Update documentation (30 min)
+3. ✅ Delete App.cache.test.tsx (5 min)
+4. ✅ Add remaining integration tests (1 hr)
+5. ✅ Update documentation (30 min)
 
 **Commit**: "refactor: simplify auto-save and file watcher logic"
+**Commit**: "test: remove obsolete cache tests"
 **Commit**: "docs: update auto-save behavior documentation"
 
 ## Rollback Plan
@@ -1222,6 +1314,20 @@ We considered keeping a simple Map of dirty files but decided against it because
 - This is acceptable for typical markdown files (<100KB)
 - Large files (>1MB) may see 200ms increase
 - Users prefer data safety over marginal speed increase
+
+### File Watcher During Saves
+
+When we save a file, we temporarily ignore file watcher events by setting `isSavingRef.current = true`. This is intentional and correct because:
+
+1. **Prevents false positives**: Our own writes would trigger "external modification" warnings
+2. **Brief window**: The save operation only takes ~50-200ms
+3. **Real changes detected**: Any actual external changes during this window would create conflicts anyway
+4. **Next cycle catches changes**: After save completes, the file watcher resumes normal operation
+
+The simplified approach (dropping events during save) is better than queueing them because:
+- File watcher will fire again after save for any real external changes
+- The directory reload will catch any structural changes
+- Avoids complex queue management for a rare edge case
 
 ## Appendix: Removed Code
 
