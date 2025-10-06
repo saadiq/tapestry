@@ -40,6 +40,16 @@ function AppContent() {
   // Previous path for save-before-switch
   const previousPathRef = useRef<string | null>(null);
 
+  // Refs for file watcher to avoid excessive re-registration
+  const activePathRef = useRef(activePath);
+  activePathRef.current = activePath;
+
+  const fileContentRef = useRef(fileContent);
+  fileContentRef.current = fileContent;
+
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+
   // Save lifecycle callbacks to track save state
   const handleBeforeSave = useCallback(() => {
     isSavingRef.current = true;
@@ -279,7 +289,7 @@ function AppContent() {
     };
   }, [fileContent, toast]);
 
-  // File watcher - simplified
+  // File watcher - fixed memory leak by using refs
   useEffect(() => {
     if (!rootPath) return;
 
@@ -287,17 +297,22 @@ function AppContent() {
       // Skip if we're currently saving
       if (isSavingRef.current) return;
 
+      // Use refs to get latest values without causing effect re-runs
+      const currentActivePath = activePathRef.current;
+      const currentFileContent = fileContentRef.current;
+      const currentToast = toastRef.current;
+
       // If active file was modified externally
-      if (event?.path === activePath) {
-        if (fileContent.isDirty) {
-          toast.showWarning(
+      if (event?.path === currentActivePath) {
+        if (currentFileContent.isDirty) {
+          currentToast.showWarning(
             'File was modified externally. Your unsaved changes may conflict. ' +
             'Save your changes to overwrite external modifications.'
           );
         } else {
           // Reload file from disk
-          await fileContent.loadFile(activePath);
-          toast.showInfo('File reloaded due to external changes');
+          await currentFileContent.loadFile(currentActivePath);
+          currentToast.showInfo('File reloaded due to external changes');
         }
       }
 
@@ -314,7 +329,7 @@ function AppContent() {
         window.electronAPI.fileSystem.removeFileChangeListener(handleFileChange);
       }
     };
-  }, [rootPath, activePath, fileContent, loadDirectory, toast]);
+  }, [rootPath, loadDirectory]);
 
   // Listen for menu events from main process
   useEffect(() => {
