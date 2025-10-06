@@ -11,31 +11,31 @@
 
 ### Audit Checklist
 1. **Toast System**:
-   - [ ] Check if DaisyUI's `alert-warning` class exists (likely does in v5)
-   - [ ] Check if `showWarning` method exists in ToastContainer
-   - [ ] Document current toast variants available
+   - [x] Check if DaisyUI's `alert-warning` class exists (likely does in v5) - **NOT IMPLEMENTED**
+   - [x] Check if `showWarning` method exists in ToastContainer - **NOT IMPLEMENTED**
+   - [x] Document current toast variants available - **success, error, info only**
 
 2. **useFileContent Hook**:
-   - [ ] Check if `saveFileSync` method already exists
-   - [ ] Document current save methods available
-   - [ ] Check if `isSavingRef` is already used
+   - [x] Check if `saveFileSync` method already exists - **NOT IMPLEMENTED**
+   - [x] Document current save methods available - **saveFile() only (async, returns boolean)**
+   - [x] Check if `isSavingRef` is already used - **Used in App.tsx, not in hook**
 
 3. **App.tsx State**:
-   - [ ] Document current cache implementation size
-   - [ ] Identify which lines contain cache logic
-   - [ ] Check if window blur handler exists
+   - [x] Document current cache implementation size - **647 lines total, ~200-250 lines cache logic**
+   - [x] Identify which lines contain cache logic - **29 cache-related references found**
+   - [x] Check if window blur handler exists - **NOT IMPLEMENTED**
 
 4. **Test Structure**:
-   - [ ] Identify test file locations and naming conventions
-   - [ ] Check if App.cache.test.tsx exists
-   - [ ] List all tests that depend on cache behavior
-   - [ ] Document bun test patterns used
+   - [x] Identify test file locations and naming conventions - **src/renderer/tests/ with .test.tsx extension**
+   - [x] Check if App.cache.test.tsx exists - **YES, 330 lines**
+   - [x] List all tests that depend on cache behavior - **Entire App.cache.test.tsx file**
+   - [x] Document bun test patterns used - **Bun test runner with happy-dom preload**
 
-### After Audit
-- Update this plan document with findings
-- Mark tasks as "Already Done" if features exist
-- Identify all breaking test changes before deletion
-- Adjust implementation approach accordingly
+### Audit Results Summary
+- **Toast System**: Missing warning variant (Task 1 required)
+- **useFileContent**: Missing saveFileSync method (Task 2 required)
+- **App.tsx**: Extensive cache system present (Tasks 3 & 3.5 required)
+- **Tests**: App.cache.test.tsx must be deleted (Task deleted ✓)
 
 ### Recommended Implementation Approach
 Based on audit findings, proceed with **incremental implementation**:
@@ -1096,33 +1096,33 @@ The auto-save system in Tapestry is designed for simplicity and data safety:
 - First run `bun test` to establish baseline and check existing test structure
 - Check if any of these features already exist before implementing
 
-### Phase 1: Foundation (Day 1)
-1. ⬜ Create warning toast variant (30 min)
-2. ⬜ Add `saveFileSync` to useFileContent with tests (1 hr)
-3. ⬜ Write integration tests for expected behavior (1 hr)
+### Phase 1: Foundation ✅ COMPLETED
+1. ✅ Create warning toast variant (30 min)
+2. ✅ Add `saveFileSync` to useFileContent with tests (1 hr)
+3. ⬜ Write integration tests for expected behavior (1 hr) - **PENDING**
 
-**Commit**: "feat: add synchronous save method and warning toasts"
+**Commit**: "feat: add synchronous save method and warning toasts" - **READY**
 
-### Phase 2: Remove Cache (Day 1-2)
-1. ⬜ Remove cache interfaces and refs from App.tsx (30 min)
-2. ⬜ Simplify file loading effect (1 hr)
-3. ⬜ Implement save-before-switch logic (1 hr)
-4. ⬜ Add window blur auto-save handler (30 min)
-5. ⬜ Run tests, fix issues (30 min)
+### Phase 2: Remove Cache ✅ COMPLETED
+1. ✅ Remove cache interfaces and refs from App.tsx (30 min)
+2. ✅ Simplify file loading effect (1 hr)
+3. ✅ Implement save-before-switch logic (1 hr)
+4. ✅ Add window blur auto-save handler (30 min)
+5. ⬜ Run tests, fix issues (30 min) - **PENDING**
 
-**Commit**: "refactor: remove file content cache system"
-**Commit**: "feat: add auto-save on window blur"
+**Commit**: "refactor: remove file content cache system" - **READY**
+**Commit**: "feat: add auto-save on window blur" - **READY**
 
-### Phase 3: Polish (Day 2)
-1. ⬜ Simplify file watcher logic (30 min)
-2. ⬜ Update beforeunload handler (15 min)
-3. ⬜ Delete App.cache.test.tsx (5 min)
-4. ⬜ Add remaining integration tests (1 hr)
-5. ⬜ Update documentation (30 min)
+### Phase 3: Polish - IN PROGRESS
+1. ✅ Simplify file watcher logic (30 min)
+2. ✅ Update beforeunload handler (15 min)
+3. ✅ Delete App.cache.test.tsx (5 min)
+4. ⬜ Add remaining integration tests (1 hr) - **PENDING**
+5. ✅ Update documentation (30 min)
 
-**Commit**: "refactor: simplify auto-save and file watcher logic"
-**Commit**: "test: remove obsolete cache tests"
-**Commit**: "docs: update auto-save behavior documentation"
+**Commit**: "refactor: simplify auto-save and file watcher logic" - **INCLUDED IN PHASE 2**
+**Commit**: "test: remove obsolete cache tests" - **READY**
+**Commit**: "docs: update auto-save behavior documentation" - **READY**
 
 ## Rollback Plan
 
@@ -1144,13 +1144,15 @@ If issues arise in production:
 
 ### Before
 - App.tsx: 647 lines
-- Complex cache logic: ~200 lines
+- Complex cache logic: ~200-250 lines
+- Cache-related references: 29
 - Test coverage: 75%
 
-### After (Expected)
-- App.tsx: ~450 lines
-- Simple save logic: ~50 lines
-- Test coverage: >90%
+### After (Actual)
+- App.tsx: 419 lines ✅ (228 lines reduced, 35% reduction)
+- Simple save logic: ~40 lines
+- Cache-related references: 0
+- Test coverage: Pending tests
 
 ## Common Pitfalls to Avoid
 
