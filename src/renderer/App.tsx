@@ -21,7 +21,52 @@ import { normalizePath, getDirectoryPath, isPathWithinDirectory } from './utils/
 import { TIMING_CONFIG } from '../shared/config/timing';
 
 // Track files we're currently saving to ignore file watcher events
-const activeSaves = new Map<string, number>(); // filePath -> timestamp
+const activeSaves = new Map<string, number>(); // normalized filePath -> timestamp
+
+/**
+ * Track that a save operation is starting for a file
+ * Paths are automatically normalized for cross-platform consistency
+ */
+function trackSaveStart(filePath: string): void {
+  const normalizedPath = normalizePath(filePath);
+  activeSaves.set(normalizedPath, Date.now());
+}
+
+/**
+ * Check if a file is currently being saved
+ * Returns true if the file was saved within the debounce window
+ */
+function isSaveActive(filePath: string): boolean {
+  const normalizedPath = normalizePath(filePath);
+  const saveTimestamp = activeSaves.get(normalizedPath);
+
+  if (!saveTimestamp) {
+    return false;
+  }
+
+  return Date.now() - saveTimestamp < TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS;
+}
+
+/**
+ * Mark a save operation as complete and schedule cleanup
+ */
+function trackSaveEnd(filePath: string): void {
+  const normalizedPath = normalizePath(filePath);
+
+  // Keep the save timestamp for debounce period to ignore file watcher events
+  setTimeout(() => {
+    activeSaves.delete(normalizedPath);
+
+    // Clean up stale entries older than 5 seconds to prevent memory growth
+    const now = Date.now();
+    const maxAge = 5000;
+    for (const [path, timestamp] of activeSaves.entries()) {
+      if (now - timestamp > maxAge) {
+        activeSaves.delete(path);
+      }
+    }
+  }, TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS);
+}
 
 // Inner component that has access to FileTreeContext and Toast
 function AppContent() {
@@ -49,29 +94,14 @@ function AppContent() {
   const handleBeforeSave = useCallback(() => {
     const currentPath = currentFilePathRef.current;
     if (currentPath) {
-      // Normalize path for consistent map keys across platforms
-      const normalizedPath = normalizePath(currentPath);
-      activeSaves.set(normalizedPath, Date.now());
+      trackSaveStart(currentPath);
     }
   }, []);
 
   const handleAfterSave = useCallback((success: boolean) => {
     const currentPath = currentFilePathRef.current;
     if (currentPath) {
-      const normalizedPath = normalizePath(currentPath);
-      // Keep the save timestamp for debounce period to ignore file watcher events
-      setTimeout(() => {
-        activeSaves.delete(normalizedPath);
-
-        // Clean up stale entries older than 5 seconds to prevent memory growth
-        const now = Date.now();
-        const maxAge = 5000; // 5 seconds
-        for (const [path, timestamp] of activeSaves.entries()) {
-          if (now - timestamp > maxAge) {
-            activeSaves.delete(path);
-          }
-        }
-      }, TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS);
+      trackSaveEnd(currentPath);
     }
   }, []);
 
@@ -103,8 +133,9 @@ function AppContent() {
         setIsLoadingFile(true);
 
         // Show toast for larger files that might take time to save
-        const fileSizeInBytes = new Blob([fileContent.content]).size;
-        const shouldShowToast = fileSizeInBytes > TIMING_CONFIG.LARGE_FILE_TOAST_THRESHOLD_BYTES;
+        // Use approximate size (2 bytes per char for UTF-16) to avoid Blob creation overhead
+        const approxSizeInBytes = fileContent.content.length * 2;
+        const shouldShowToast = approxSizeInBytes > TIMING_CONFIG.LARGE_FILE_TOAST_THRESHOLD_BYTES;
         if (shouldShowToast) {
           toast.showInfo('Saving previous file...');
         }
@@ -316,11 +347,12 @@ function AppContent() {
         // Only save if there's a dirty file open
         if (fileContent.isDirty && fileContent.filePath) {
           // Check file size to avoid blocking UI on large file saves
-          const fileSizeInBytes = new Blob([fileContent.content]).size;
+          // Use approximate size (2 bytes per char for UTF-16) to avoid Blob creation overhead
+          const approxSizeInBytes = fileContent.content.length * 2;
 
           // For very large files (>5MB), defer the save to avoid UI jank during blur
           // User will be prompted to save on file switch or app close instead
-          if (fileSizeInBytes > TIMING_CONFIG.LARGE_FILE_WARNING_THRESHOLD_BYTES) {
+          if (approxSizeInBytes > TIMING_CONFIG.LARGE_FILE_WARNING_THRESHOLD_BYTES) {
             console.log('[Blur Save] Skipping auto-save for large file on blur to prevent UI jank');
             return;
           }
@@ -392,9 +424,7 @@ function AppContent() {
       // If active file was modified externally
       if (normalizedEventPath && normalizedActivePath && normalizedEventPath === normalizedActivePath) {
         // Skip if we're currently saving this specific file
-        // Use normalized path for lookup in activeSaves map
-        const saveTimestamp = activeSaves.get(normalizedActivePath);
-        if (saveTimestamp && Date.now() - saveTimestamp < TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS) {
+        if (currentActivePath && isSaveActive(currentActivePath)) {
           // This is likely our own save, ignore it
           return;
         }

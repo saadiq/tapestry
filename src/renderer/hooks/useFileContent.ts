@@ -117,7 +117,7 @@ export function useFileContent(
   }, []);
 
   /**
-   * Save file content (Fix #2: Accept path override for auto-save validation)
+   * Save file content with timeout protection
    */
   const saveFile = useCallback(async (pathOverride?: string): Promise<boolean> => {
     const filePath = pathOverride || state.filePath;
@@ -143,10 +143,17 @@ export function useFileContent(
     setState((prev) => ({ ...prev, saving: true, error: null }));
 
     try {
-      const result = await fileSystemService.writeFile(
-        filePath,
-        state.content
-      );
+      // Race the save operation against a timeout to prevent eternal hangs
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`Save operation timed out after ${saveTimeout}ms`));
+        }, saveTimeout);
+      });
+
+      const result = await Promise.race([
+        fileSystemService.writeFile(filePath, state.content),
+        timeoutPromise
+      ]);
 
       if (result.success) {
         setState((prev) => ({
@@ -176,7 +183,7 @@ export function useFileContent(
       onAfterSave?.(false);
       return false;
     }
-  }, [state.filePath, state.content, state.isDirty, onBeforeSave, onAfterSave]);
+  }, [state.filePath, state.content, state.isDirty, onBeforeSave, onAfterSave, saveTimeout]);
 
   /**
    * Save file immediately without debounce
@@ -280,27 +287,23 @@ export function useFileContent(
 
       // Set new auto-save timer if enabled
       if (enableAutoSave && currentFilePathRef.current) {
-        // Capture both the file path AND content when setting the timer
-        // This prevents race conditions where content changes before timer fires
+        // Capture the file path when setting the timer
+        // This prevents saving to the wrong file if user switches files
         const capturedPath = currentFilePathRef.current;
-        const capturedContent = newContent;
 
         autoSaveTimerRef.current = setTimeout(() => {
           // Only save if still on the same file (prevents saving to wrong file)
           if (currentFilePathRef.current === capturedPath) {
-            // Use setState to get the latest content at save time
-            // This ensures we save the most recent edits, not the captured snapshot
-            setState((currentState) => {
-              // Double-check we're still on the same file and content is dirty
-              if (currentState.filePath === capturedPath && currentState.isDirty) {
-                // Save with the latest content
-                saveFile(capturedPath).catch((error) => {
-                  console.error('[AutoSave] Failed for', capturedPath, ':', error);
-                  // Notify callbacks that auto-save failed
-                  onAfterSave?.(false);
-                });
-              }
-              return currentState; // No state change
+            // Save with the current path - saveFile will read latest content from state
+            saveFile(capturedPath).catch((error) => {
+              console.error('[AutoSave] Failed for', capturedPath, ':', error);
+              // Update state with error
+              setState(prev => ({
+                ...prev,
+                error: error instanceof Error ? error.message : 'Auto-save failed'
+              }));
+              // Notify callbacks that auto-save failed
+              onAfterSave?.(false);
             });
           } else {
             // Log when auto-save is skipped due to file switch
@@ -309,7 +312,7 @@ export function useFileContent(
         }, autoSaveDelay);
       }
     },
-    [enableAutoSave, autoSaveDelay, clearAutoSaveTimer, saveFile]
+    [enableAutoSave, autoSaveDelay, clearAutoSaveTimer, saveFile, onAfterSave]
   );
 
   /**
