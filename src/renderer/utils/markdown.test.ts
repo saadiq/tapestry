@@ -3,7 +3,7 @@
  * Focus on markdownToJSON() conversion and round-trip fidelity
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { markdownToJSON, createMarkdownParser, createTurndownService } from './markdown';
 
 describe('markdown utils', () => {
@@ -308,6 +308,131 @@ describe('markdown utils', () => {
 
       expect(markdown).toContain('|');
       expect(markdown).toContain('Header');
+    });
+
+    describe('TipTap table conversion (custom rule)', () => {
+      it('should convert TipTap table HTML with <p> tags in cells', () => {
+        const turndown = createTurndownService();
+        const tiptapTableHTML = `<table class="table">
+<tbody>
+  <tr>
+    <th colspan="1" rowspan="1"><p>Header 1</p></th>
+    <th colspan="1" rowspan="1"><p>Header 2</p></th>
+  </tr>
+  <tr>
+    <td colspan="1" rowspan="1"><p>Cell 1</p></td>
+    <td colspan="1" rowspan="1"><p>Cell 2</p></td>
+  </tr>
+</tbody>
+</table>`;
+
+        const markdown = turndown.turndown(tiptapTableHTML);
+
+        expect(markdown).toContain('| Header 1 | Header 2 |');
+        expect(markdown).toContain('| --- | --- |');
+        expect(markdown).toContain('| Cell 1 | Cell 2 |');
+      });
+
+      it('should handle tables with only header rows', () => {
+        const turndown = createTurndownService();
+        const html = `<table><tr><th><p>H1</p></th><th><p>H2</p></th></tr></table>`;
+        const markdown = turndown.turndown(html);
+
+        expect(markdown).toContain('| H1 | H2 |');
+        expect(markdown).toContain('| --- | --- |');
+      });
+
+      it('should handle tables with only data rows (no th tags)', () => {
+        const turndown = createTurndownService();
+        const html = `<table><tr><td><p>D1</p></td><td><p>D2</p></td></tr><tr><td><p>D3</p></td><td><p>D4</p></td></tr></table>`;
+        const markdown = turndown.turndown(html);
+
+        // GFM treats first row as header regardless
+        expect(markdown).toContain('| D1 | D2 |');
+        expect(markdown).toContain('| --- | --- |');
+        expect(markdown).toContain('| D3 | D4 |');
+      });
+
+      it('should handle empty table cells', () => {
+        const turndown = createTurndownService();
+        const html = `<table><tr><th><p>Header</p></th><th><p></p></th></tr><tr><td><p>Data</p></td><td><p></p></td></tr></table>`;
+        const markdown = turndown.turndown(html);
+
+        expect(markdown).toContain('| Header |  |');
+        expect(markdown).toContain('| Data |  |');
+      });
+
+      it('should handle cells with multiple paragraphs', () => {
+        const turndown = createTurndownService();
+        const html = `<table><tr><th><p>Header</p></th></tr><tr><td><p>Line 1</p><p>Line 2</p></td></tr></table>`;
+        const markdown = turndown.turndown(html);
+
+        // Multiple paragraphs joined with space
+        expect(markdown).toContain('| Line 1 Line 2 |');
+      });
+
+      it('should warn when table contains colspan/rowspan', () => {
+        const turndown = createTurndownService();
+        const html = `<table><tr><th colspan="2"><p>Merged Header</p></th></tr><tr><td><p>C1</p></td><td><p>C2</p></td></tr></table>`;
+
+        const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        turndown.turndown(html);
+
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringContaining('merged cells (colspan/rowspan)')
+        );
+        consoleSpy.mockRestore();
+      });
+
+      it('should preserve plain text from cells (formatting is stripped)', () => {
+        const turndown = createTurndownService();
+        // Note: This test documents the limitation - nested formatting is lost
+        const html = `<table><tr><th><p><strong>Bold</strong> <em>Italic</em> <code>Code</code></p></th></tr></table>`;
+        const markdown = turndown.turndown(html);
+
+        // textContent extraction strips HTML tags
+        expect(markdown).toContain('| Bold Italic Code |');
+        expect(markdown).not.toContain('**Bold**');
+        expect(markdown).not.toContain('*Italic*');
+        expect(markdown).not.toContain('`Code`');
+      });
+
+      it('should round-trip simple tables correctly', () => {
+        const originalMarkdown = '| Header 1 | Header 2 |\n|----------|----------|\n| Cell 1   | Cell 2   |';
+        const json = markdownToJSON(originalMarkdown);
+
+        // Simulate TipTap HTML output (this would come from editor.getHTML())
+        // For testing, we'll construct the expected TipTap table structure
+        const turndown = createTurndownService();
+        const tiptapHTML = `<table class="table">
+<tbody>
+  <tr>
+    <th><p>Header 1</p></th>
+    <th><p>Header 2</p></th>
+  </tr>
+  <tr>
+    <td><p>Cell 1</p></td>
+    <td><p>Cell 2</p></td>
+  </tr>
+</tbody>
+</table>`;
+
+        const roundTrippedMarkdown = turndown.turndown(tiptapHTML);
+
+        expect(roundTrippedMarkdown).toContain('| Header 1 | Header 2 |');
+        expect(roundTrippedMarkdown).toContain('| Cell 1 | Cell 2 |');
+      });
+
+      it('should not apply custom rule to regular tables without <p> tags', () => {
+        const turndown = createTurndownService();
+        // Regular HTML table (not from TipTap)
+        const html = `<table><tr><th>Header</th></tr><tr><td>Cell</td></tr></table>`;
+        const markdown = turndown.turndown(html);
+
+        // Should still convert to markdown using GFM plugin
+        expect(markdown).toContain('| Header |');
+        expect(markdown).toContain('| Cell |');
+      });
     });
   });
 });

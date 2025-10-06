@@ -211,6 +211,7 @@ Horizontal rule
 - Complex table features (cell merging, alignment) may not round-trip perfectly
 - Very large tables (>50 rows) may impact performance
 - Tables are best edited in WYSIWYG mode for complex structures
+- **Formatting Preservation**: Nested formatting (bold, italic, links, code) within table cells is NOT preserved when converting from WYSIWYG to markdown mode. The TurndownService uses `textContent` extraction which strips HTML tags, converting formatted text to plain text. This is a known limitation. Workaround: Keep tables in WYSIWYG mode for rich formatting, or manually re-apply formatting after switching modes.
 
 **Performance Considerations:**
 - Documents >1000 lines: Expect slight lag in markdown mode switching
