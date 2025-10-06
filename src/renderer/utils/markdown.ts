@@ -46,6 +46,95 @@ export const createTurndownService = (): TurndownService => {
   // Add GFM plugin for table support
   turndown.use(gfm);
 
+  /**
+   * Custom TurndownService rule for TipTap tables
+   *
+   * TipTap wraps table cell content in <p> tags, which the default GFM plugin
+   * doesn't handle correctly. This rule extracts text from paragraph tags within
+   * cells and converts them to proper GFM markdown table syntax.
+   *
+   * IMPORTANT: This rule must be added AFTER the GFM plugin to override the
+   * default table handling. If the GFM plugin is added after this rule, tables
+   * will not convert correctly.
+   *
+   * Limitations:
+   * - Uses textContent extraction, which strips nested formatting (bold, italic, links, code)
+   * - Merged cells (colspan/rowspan) are not supported in GFM and will be flattened
+   * - Multiple paragraphs in a cell are joined with spaces
+   */
+  turndown.addRule('tiptapTable', {
+    filter: (node) => {
+      // Check if this is a table with the TipTap structure (has <p> tags in cells)
+      // Fast string check before expensive DOM queries
+      return node.nodeName === 'TABLE' && node.innerHTML.includes('<p>');
+    },
+    replacement: (content, node) => {
+      const element = node as HTMLTableElement;
+      const rows: string[][] = [];
+      let hasHeader = false;
+
+      // Process each row
+      const tableRows = Array.from(element.querySelectorAll('tr'));
+      let hasComplexCells = false;
+
+      tableRows.forEach((row, rowIndex) => {
+        const cells: string[] = [];
+        const cellElements = Array.from(row.querySelectorAll('th, td'));
+
+        cellElements.forEach((cell) => {
+          // Check for colspan/rowspan (not supported in GFM)
+          const colspan = parseInt(cell.getAttribute('colspan') || '1', 10);
+          const rowspan = parseInt(cell.getAttribute('rowspan') || '1', 10);
+          if (colspan > 1 || rowspan > 1) {
+            hasComplexCells = true;
+          }
+
+          // Extract text from paragraph tags or direct text content
+          const paragraphs = cell.querySelectorAll('p');
+          let cellText = '';
+          if (paragraphs.length > 0) {
+            cellText = Array.from(paragraphs).map(p => p.textContent || '').join(' ');
+          } else {
+            cellText = cell.textContent || '';
+          }
+          cells.push(cellText.trim());
+        });
+
+        if (cellElements.length > 0 && cellElements[0].tagName === 'TH') {
+          hasHeader = true;
+        }
+
+        if (cells.length > 0) {
+          rows.push(cells);
+        }
+      });
+
+      if (rows.length === 0) {
+        return '';
+      }
+
+      // Warn if table contains merged cells (not supported in GFM)
+      if (hasComplexCells) {
+        console.warn('Table contains merged cells (colspan/rowspan) which are not supported in GFM markdown. Cell merging will be lost in conversion.');
+      }
+
+      // Build markdown table
+      let markdown = '';
+
+      rows.forEach((row, rowIndex) => {
+        markdown += '| ' + row.join(' | ') + ' |\n';
+
+        // Add separator after first row (GFM treats first row as header)
+        if (rowIndex === 0) {
+          const separator = row.map(() => '---').join(' | ');
+          markdown += '| ' + separator + ' |\n';
+        }
+      });
+
+      return '\n\n' + markdown + '\n\n';
+    }
+  });
+
   return turndown;
 };
 
