@@ -153,7 +153,12 @@ function parseHTMLToJSON(html: string): JSONContent[] {
       const parseErrors = doc.getElementsByTagName('parsererror');
       if (parseErrors.length > 0) {
         // If parsing failed, fall back to simple parser
-        console.warn('DOMParser encountered an error, falling back to simple parser');
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('DOMParser encountered a parse error, falling back to simple parser:', {
+            error: parseErrors[0]?.textContent,
+            html: html.substring(0, 100) // Log first 100 chars for debugging
+          });
+        }
         return parseSimpleHTMLToJSON(html);
       }
 
@@ -161,7 +166,12 @@ function parseHTMLToJSON(html: string): JSONContent[] {
       return domNodesToJSON(doc.body.childNodes);
     } catch (error) {
       // If DOMParser throws an error, fall back to simple parser
-      console.warn('DOMParser error:', error);
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('DOMParser error, falling back to simple parser:', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          html: html.substring(0, 100) // Log first 100 chars for debugging
+        });
+      }
       return parseSimpleHTMLToJSON(html);
     }
   } else {
@@ -177,9 +187,20 @@ function parseHTMLToJSON(html: string): JSONContent[] {
 }
 
 /**
- * HTML tag patterns for inline elements - moved outside to avoid re-creation
+ * Type for HTML pattern matching
  */
-const getHTMLPatterns = () => [
+interface HTMLPattern {
+  regex: RegExp;
+  mark: MarkType | 'underline';
+}
+
+/**
+ * HTML tag patterns for inline elements
+ * IMPORTANT: Returns new RegExp instances each time to avoid state issues with the 'g' flag.
+ * RegExp objects with 'g' flag maintain state via lastIndex property, so sharing them
+ * between multiple parse operations would cause incorrect matches.
+ */
+const getHTMLPatterns = (): HTMLPattern[] => [
   { regex: /<b>([\s\S]*?)<\/b>/gi, mark: 'bold' },
   { regex: /<strong>([\s\S]*?)<\/strong>/gi, mark: 'bold' },
   { regex: /<i>([\s\S]*?)<\/i>/gi, mark: 'italic' },
@@ -256,8 +277,8 @@ function parseSimpleHTMLToJSON(html: string): JSONContent[] {
           const nestedContent = parseSimpleHTMLToJSON(earliestMatch.content);
           // Add the current mark to all text nodes in the nested content
           nestedContent.forEach(node => {
-            if (node.type === 'text') {
-              node.marks = [...(node.marks || []), { type: earliestMatch.mark as MarkType }];
+            if (node.type === 'text' && earliestMatch.mark !== 'underline') {
+              node.marks = [...(node.marks || []), { type: earliestMatch.mark }];
             }
           });
           result.push(...nestedContent);
@@ -266,7 +287,7 @@ function parseSimpleHTMLToJSON(html: string): JSONContent[] {
           result.push({
             type: 'text',
             text: earliestMatch.content,
-            marks: [{ type: earliestMatch.mark as MarkType }],
+            marks: [{ type: earliestMatch.mark }],
           });
         }
       } else if (earliestMatch.content) {
@@ -277,11 +298,13 @@ function parseSimpleHTMLToJSON(html: string): JSONContent[] {
         });
       }
 
-      // Move past this match
-      const newRemaining = remaining.substring(earliestMatch.index + earliestMatch.length);
-      // Safety: Ensure we're advancing at least 1 character to prevent infinite loop
-      if (newRemaining.length >= remaining.length) {
-        // Not advancing, add remaining text and break
+      // Move past this match and ensure we're making progress
+      const originalLength = remaining.length;
+      remaining = remaining.substring(earliestMatch.index + earliestMatch.length);
+
+      // Safety: If we didn't make progress, bail out to prevent infinite loop
+      if (remaining.length >= originalLength) {
+        // Not advancing, add any remaining text and break
         if (remaining) {
           result.push({
             type: 'text',
@@ -290,7 +313,6 @@ function parseSimpleHTMLToJSON(html: string): JSONContent[] {
         }
         break;
       }
-      remaining = newRemaining;
     } else {
       // No more matches, add remaining text
       if (remaining) {
@@ -378,7 +400,7 @@ function domNodeToJSON(node: Node, depth: number = 0): JSONContent | JSONContent
   }
 
   // Depth limit safeguard to prevent stack overflow
-  if (depth > MAX_DOM_DEPTH) {
+  if (depth >= MAX_DOM_DEPTH) {
     return null;
   }
 
