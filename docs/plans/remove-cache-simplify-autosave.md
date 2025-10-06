@@ -692,9 +692,13 @@ describe('Window blur auto-save', () => {
 
 #### Manual Testing
 1. Open a file and make changes
-2. Switch to another application (Cmd+Tab or Alt+Tab)
-3. Verify file saves automatically
-4. Test with save failure (read-only file) - verify warning appears
+2. Test different blur triggers:
+   - Switch to another app via Cmd+Tab (Mac) or Alt+Tab (Windows)
+   - Click outside the window to Finder/Desktop
+   - Click another app in the dock/taskbar
+   - Minimize the window
+3. Verify file saves automatically in all cases
+4. Test with save failure (read-only file) - verify warning toast appears
 
 ---
 
@@ -1211,7 +1215,11 @@ The auto-save system in Tapestry is designed for simplicity and data safety:
 - [ ] Edit file1, switch to file2 - verify file1 saves
 - [ ] Edit file1, switch to file2 with save error - verify stays on file1
 - [ ] Edit file1, wait 1 second - verify auto-saves
-- [ ] Edit file1, switch to another app (Cmd+Tab) - verify saves on blur
+- [ ] **Window Blur Auto-save Testing:**
+  - [ ] Edit file1, switch to another app (Cmd+Tab on Mac / Alt+Tab on Windows) - verify saves
+  - [ ] Edit file1, click outside window to Finder/Desktop - verify saves
+  - [ ] Edit file1, click another app in dock/taskbar - verify saves
+  - [ ] Edit file1, minimize window - verify saves
 - [ ] Edit file1, close app - verify warning appears
 - [ ] External edit to clean file - verify reloads
 - [ ] External edit to dirty file - verify warning appears
