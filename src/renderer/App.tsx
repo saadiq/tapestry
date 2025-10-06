@@ -1,19 +1,5 @@
 /**
  * Main App Component
- *
- * Multi-File Editing Implementation Notes:
- *
- * 1. Auto-Save: Re-enabled with cache-aware implementation. The auto-save timer is cleared
- *    when switching files, and the save operation validates that the file path hasn't changed.
- *    Cache entries are cleared after successful saves to maintain consistency.
- *
- * 2. Dirty State Persistence: Dirty state is NOT persisted across app restarts.
- *    When the app closes, all unsaved changes in cache are lost. This is intentional to avoid
- *    stale cache issues. Users are warned before closing with unsaved changes.
- *
- * 3. Cache Integrity: Cache entries include timestamps for validation and true LRU eviction.
- *    Cache is validated against disk content before restoration and invalidated when files
- *    are modified externally via file watcher.
  */
 
 import './index.css';
@@ -32,18 +18,6 @@ import { useFileContent } from './hooks/useFileContent';
 import { fileSystemService } from './services/fileSystemService';
 import type { FileWatcherEvent } from '../shared/types/fileSystem';
 
-// Cache entry for multi-file editing with integrity validation
-interface FileContentCache {
-  content: string;
-  originalContent: string;
-  rawDiskContent: string; // Raw disk content for cache validation
-  isDirty: boolean;
-  timestamp: number; // For cache validation and true LRU implementation
-}
-
-// Maximum number of files to keep in cache
-const MAX_CACHE_SIZE = 10;
-
 // Inner component that has access to FileTreeContext and Toast
 function AppContent() {
   const { theme, toggleTheme } = useTheme();
@@ -60,226 +34,88 @@ function AppContent() {
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
   const [isLoadingFile, setIsLoadingFile] = useState(false);
 
-  // Multi-file content cache - stores unsaved changes for all opened files
-  const fileContentCacheRef = useRef<Map<string, FileContentCache>>(new Map());
-
-  // Track raw disk content for cache validation (Map: filePath -> raw content)
-  const rawDiskContentRef = useRef<Map<string, string>>(new Map());
-
   // Track when we're saving to prevent file watcher from reloading during our own saves
   const isSavingRef = useRef(false);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Queue for file watcher events during save window (Fix #3)
-  const pendingFileEventsRef = useRef<FileWatcherEvent[]>([]);
-
-  // Track last loaded file path to prevent redundant reloads
-  const lastLoadedPathRef = useRef<string | null>(null);
-
-  // Loading gate to prevent race conditions from rapid file switching
-  const loadingFileRef = useRef<string | null>(null);
+  // Previous path for save-before-switch
+  const previousPathRef = useRef<string | null>(null);
 
   // Save lifecycle callbacks to track save state
   const handleBeforeSave = useCallback(() => {
     isSavingRef.current = true;
-
-    // Clear any existing timeout
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
   }, []);
 
-  // Store file change handler in ref so we can call it for queued events (Fix #3)
-  const handleFileChangeRef = useRef<((event: FileWatcherEvent | undefined) => Promise<void>) | null>(null);
-
   const handleAfterSave = useCallback((success: boolean) => {
-    // Keep isSaving true for 1000ms after save to ignore delayed file watcher events
-    saveTimeoutRef.current = setTimeout(() => {
+    // Reset saving flag after a short delay to ignore file watcher events from our own save
+    setTimeout(() => {
       isSavingRef.current = false;
-      saveTimeoutRef.current = null;
-
-      // Clear cache entry after successful save (Fix #1: Memory Leak)
-      // This handles both auto-save and manual save
-      if (success && activePathRef.current) {
-        fileContentCacheRef.current.delete(activePathRef.current);
-        rawDiskContentRef.current.delete(activePathRef.current);
-        setFileDirty(activePathRef.current, false);
-      }
-
-      // Process queued file watcher events (Fix #3)
-      const events = pendingFileEventsRef.current;
-      pendingFileEventsRef.current = [];
-
-      // Process each queued event using the stored handler
-      if (events.length > 0 && handleFileChangeRef.current) {
-        console.log(`[FileWatcher] Processing ${events.length} queued event(s)`);
-        events.forEach((event) => {
-          handleFileChangeRef.current?.(event);
-        });
-      }
-    }, 1000);
-  }, [setFileDirty]);
-
-  // Extract auto-save delay to constant (Fix #9)
-  const AUTO_SAVE_DELAY_MS = 1000;
+    }, 500);
+  }, []);
 
   const fileContent = useFileContent({
-    enableAutoSave: true, // Re-enabled with cache-aware implementation
-    autoSaveDelay: AUTO_SAVE_DELAY_MS,
+    enableAutoSave: true,
+    autoSaveDelay: 1000,
     onBeforeSave: handleBeforeSave,
     onAfterSave: handleAfterSave
   });
 
-  // Use refs for frequently changing values in file watcher to avoid closure issues
-  const activePathRef = useRef(activePath);
-  activePathRef.current = activePath;
-
-  const fileContentRef = useRef(fileContent);
-  fileContentRef.current = fileContent;
-
-  const toastRef = useRef(toast);
-  toastRef.current = toast;
-
-  // Store latest fileContent methods in refs to avoid stale closures
-  // Update refs directly in render (safe because refs don't trigger re-renders)
-  const saveFileRef = useRef(fileContent.saveFile);
-  saveFileRef.current = fileContent.saveFile;
-
-  const updateContentRef = useRef(fileContent.updateContent);
-  updateContentRef.current = fileContent.updateContent;
-
-  // Load file when activePath changes (only if it's actually different from last loaded)
+  // Load file when activePath changes (with save-before-switch)
   useEffect(() => {
-    const loadFileWithCache = async () => {
+    const loadFileWithSave = async () => {
       if (!activePath) return;
 
-      // Gate: prevent concurrent file loading operations
-      if (loadingFileRef.current === activePath) return;
-      loadingFileRef.current = activePath;
+      // Save previous file if it was dirty
+      if (previousPathRef.current &&
+          previousPathRef.current !== activePath &&
+          fileContent.isDirty) {
 
+        setIsLoadingFile(true);
+
+        // Show toast for larger files that might take time to save
+        const approxSizeInBytes = fileContent.content.length * 2;
+        const shouldShowToast = approxSizeInBytes > 10240; // 10KB threshold
+        if (shouldShowToast) {
+          toast.showInfo('Saving previous file...');
+        }
+
+        const saveResult = await fileContent.saveFileSync();
+
+        if (!saveResult.success) {
+          // Save failed - show error and prevent switch
+          toast.showError(
+            `Failed to save ${previousPathRef.current}: ${saveResult.error}. ` +
+            `Please fix the issue before switching files.`
+          );
+          setIsLoadingFile(false);
+
+          // Revert the file selection in tree
+          if (previousPathRef.current !== activePath) {
+            setActiveFile(previousPathRef.current);
+          }
+          return;
+        }
+
+        // Clear dirty state in tree for saved file
+        setFileDirty(previousPathRef.current, false);
+      }
+
+      // Load the new file
       setIsLoadingFile(true);
-
       try {
-        // Save current file to cache before switching (capture synchronously to avoid race condition)
-        const previousPath = lastLoadedPathRef.current;
-        if (previousPath && previousPath !== activePath) {
-          // Capture current state immediately before any async operations (Fix #1: use getCurrentState)
-          const currentState = fileContent.getCurrentState();
-          const currentContent = currentState.content;
-          const currentOriginalContent = currentState.originalContent;
-          const currentIsDirty = currentState.isDirty;
-
-          // Implement true LRU eviction: if cache is at max size, remove least recently used entry
-          if (fileContentCacheRef.current.size >= MAX_CACHE_SIZE) {
-            // Find oldest entry by timestamp
-            let oldestPath: string | null = null;
-            let oldestTime = Infinity;
-
-            fileContentCacheRef.current.forEach((entry, path) => {
-              if (entry.timestamp < oldestTime) {
-                oldestTime = entry.timestamp;
-                oldestPath = path;
-              }
-            });
-
-            if (oldestPath) {
-              fileContentCacheRef.current.delete(oldestPath);
-            }
-          }
-
-          // Get raw disk content from ref, or empty string if not available
-          const rawDiskContent = rawDiskContentRef.current.get(previousPath) || '';
-
-          fileContentCacheRef.current.set(previousPath, {
-            content: currentContent,
-            originalContent: currentOriginalContent,
-            rawDiskContent: rawDiskContent,
-            isDirty: currentIsDirty,
-            timestamp: Date.now(),
-          });
-        }
-
-        // Check if we have cached content for the new file
-        const cached = fileContentCacheRef.current.get(activePath);
-
-        if (cached) {
-          // Validate cache before restoring - check if file was modified on disk
-          try {
-            const diskResult = await fileSystemService.readFile(activePath);
-
-            // Store raw disk content for future validation
-            rawDiskContentRef.current.set(activePath, diskResult.content);
-
-            if (diskResult.content === cached.rawDiskContent) {
-              // File unchanged on disk - safe to restore cached changes
-              // Clear any pending auto-save timer before manual content update
-              fileContent.clearAutoSaveTimer();
-              // Manually set state to avoid double file read
-              // Use cached originalContent (normalized) instead of disk content (raw)
-              fileContent.updateOriginalContent(cached.originalContent);
-              fileContent.updateContent(cached.content);
-
-              // Update cached entry's timestamp for true LRU
-              fileContentCacheRef.current.set(activePath, {
-                ...cached,
-                timestamp: Date.now(),
-              });
-            } else {
-              // File changed on disk - invalidate cache and use disk content
-              console.log('[Cache] File modified on disk, invalidating cache:', activePath);
-              fileContentCacheRef.current.delete(activePath);
-              // Clear any pending auto-save timer before manual content update
-              fileContent.clearAutoSaveTimer();
-              // Use already-read disk content instead of loading again
-              fileContent.updateOriginalContent(diskResult.content);
-              fileContent.updateContent(diskResult.content);
-            }
-          } catch (error) {
-            // Error reading file for validation - invalidate cache and load from disk
-            console.error('[Cache] Error validating cache, invalidating:', error);
-            fileContentCacheRef.current.delete(activePath);
-            toast.showError(`Error validating cached content: ${error instanceof Error ? error.message : 'Unknown error'}`);
-
-            // Load file (loadFile will read the file internally)
-            await fileContent.loadFile(activePath);
-            // Raw content will be stored when switching away from this file
-          }
-        } else {
-          // Load from disk and store raw content
-          // Note: We read the file twice here - once in loadFile, once to store raw content
-          // This is acceptable as it only happens on fresh load (not cache restoration)
-          await fileContent.loadFile(activePath);
-
-          // Store raw disk content for future cache validation
-          try {
-            const diskResult = await fileSystemService.readFile(activePath);
-            rawDiskContentRef.current.set(activePath, diskResult.content);
-          } catch (error) {
-            console.error('[Cache] Failed to read raw disk content:', error);
-            // Non-critical: cache validation will fail gracefully without raw content
-          }
-        }
-
-        lastLoadedPathRef.current = activePath;
+        await fileContent.loadFile(activePath);
+        previousPathRef.current = activePath;
       } catch (error) {
-        // Handle errors in file loading (Fix #5)
-        console.error('[FileLoad] Error loading file:', error);
+        console.error('Failed to load file:', error);
         toast.showError(`Failed to load file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        // Optionally clear active file to show error state
       } finally {
-        // Always clear loading gate and loading state
-        loadingFileRef.current = null;
         setIsLoadingFile(false);
       }
     };
 
-    if (activePath && activePath !== lastLoadedPathRef.current) {
-      loadFileWithCache();
+    if (activePath && activePath !== fileContent.filePath) {
+      loadFileWithSave();
     }
-    // Only depend on activePath - other dependencies (fileContent, setFileDirty, toast, setIsLoadingFile)
-    // are either accessed via refs or are stable from hooks, avoiding stale closures
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePath]);
+  }, [activePath, fileContent, setActiveFile, setFileDirty, toast]);
 
   // Update word count when content changes
   useEffect(() => {
@@ -297,50 +133,12 @@ function AppContent() {
     }
   }, [activePath, fileContent.isDirty, setFileDirty]);
 
-  // Clear cache when rootPath changes or directory is closed (Fix #3)
-  useEffect(() => {
-    // Clear cache when switching directories or closing directory (rootPath becomes null)
-    fileContentCacheRef.current.clear();
-    rawDiskContentRef.current.clear();
-  }, [rootPath]);
-
-  // Clean up cache for deleted files synchronously after directory reload (Fix #2)
-  useEffect(() => {
-    if (!rootPath || nodes.length === 0) return;
-
-    // Collect all valid file paths from the current file tree
-    const validPaths = new Set<string>();
-    const collectPaths = (nodeList: typeof nodes) => {
-      for (const node of nodeList) {
-        validPaths.add(node.path);
-        if (node.children) {
-          collectPaths(node.children);
-        }
-      }
-    };
-    collectPaths(nodes);
-
-    // Remove cache entries for files that no longer exist in the tree
-    const cacheEntries = Array.from(fileContentCacheRef.current.keys());
-    for (const path of cacheEntries) {
-      if (!validPaths.has(path)) {
-        console.log('[Cache] Removing deleted file from cache:', path);
-        fileContentCacheRef.current.delete(path);
-        rawDiskContentRef.current.delete(path);
-        setFileDirty(path, false);
-      }
-    }
-  }, [nodes, rootPath, setFileDirty]);
-
   const handleUpdate = useCallback((newContent: string) => {
-    // Use ref to get latest updateContent function, avoiding stale closure
-    updateContentRef.current(newContent);
-  }, []);
+    fileContent.updateContent(newContent);
+  }, [fileContent]);
 
   const handleContentLoaded = useCallback((convertedContent: string) => {
     // Only update content and originalContent when file is not dirty
-    // This handles initial file load (normalizes markdown format) but preserves
-    // unsaved changes when restoring from cache
     if (!fileContent.isDirty) {
       fileContent.updateOriginalContent(convertedContent);
       fileContent.updateContent(convertedContent);
@@ -348,25 +146,13 @@ function AppContent() {
   }, [fileContent]);
 
   const handleSave = useCallback(async () => {
-    try {
-      // Use ref to get latest saveFile function, avoiding stale closure
-      const success = await saveFileRef.current();
-      if (success) {
-        // Clear cache entry for saved file (Fix #4)
-        if (activePath) {
-          fileContentCacheRef.current.delete(activePath);
-          rawDiskContentRef.current.delete(activePath);
-          setFileDirty(activePath, false);
-        }
-        toast.showSuccess('File saved successfully');
-      } else if (fileContent.error) {
-        toast.showError(`Failed to save file: ${fileContent.error}`);
-      }
-    } catch (error) {
-      console.error('Save error:', error);
-      throw error; // Re-throw to let ErrorBoundary catch it
+    const success = await fileContent.saveFile();
+    if (success) {
+      toast.showSuccess('File saved successfully');
+    } else if (fileContent.error) {
+      toast.showError(`Failed to save file: ${fileContent.error}`);
     }
-  }, [toast, fileContent.error, activePath, setFileDirty]);
+  }, [fileContent, toast]);
 
   const ensureDirectoryContext = useCallback(
     async (filePath: string) => {
@@ -414,9 +200,6 @@ function AppContent() {
   const handleOpenFolder = useCallback(async () => {
     const result = await fileSystemService.openDirectory();
     if (result.success && result.path) {
-      // Clear cache when switching directories
-      fileContentCacheRef.current.clear();
-      rawDiskContentRef.current.clear();
       await loadDirectory(result.path);
       // Watch directory for changes
       await fileSystemService.watchDirectory(result.path);
@@ -450,98 +233,88 @@ function AppContent() {
     onFind: handleFind
   });
 
-  // Warn before closing with unsaved changes (check both active file and cache)
+  // Warn before closing with unsaved changes
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      // Check if active file is dirty OR if any cached files are dirty
-      const hasUnsavedChanges = fileContent.isDirty ||
-        Array.from(fileContentCacheRef.current.values()).some(entry => entry.isDirty);
-
-      if (hasUnsavedChanges) {
+      if (fileContent.isDirty) {
         e.preventDefault();
         e.returnValue = '';
       }
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [fileContent.isDirty]);
 
-  // Clean up save timeout on component unmount (Fix: memory leak)
+  // Auto-save on window blur
   useEffect(() => {
+    let blurSaveTimeout: NodeJS.Timeout | null = null;
+    const BLUR_SAVE_DEBOUNCE_MS = 100;
+
+    const handleWindowBlur = () => {
+      // Debounce rapid blur events (e.g., quick app switching)
+      if (blurSaveTimeout) {
+        clearTimeout(blurSaveTimeout);
+      }
+
+      blurSaveTimeout = setTimeout(async () => {
+        // Only save if there's a dirty file open
+        if (fileContent.isDirty && fileContent.filePath) {
+          const result = await fileContent.saveFileSync();
+          if (!result.success) {
+            // Don't prevent blur, but show warning
+            toast.showWarning(`Auto-save failed on window blur: ${result.error}`);
+          }
+        }
+      }, BLUR_SAVE_DEBOUNCE_MS);
+    };
+
+    window.addEventListener('blur', handleWindowBlur);
+
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
+      window.removeEventListener('blur', handleWindowBlur);
+      if (blurSaveTimeout) {
+        clearTimeout(blurSaveTimeout);
       }
     };
-  }, []);
+  }, [fileContent, toast]);
 
-  // Listen for file system changes with proper handling of active file modifications
+  // File watcher - simplified
   useEffect(() => {
     if (!rootPath) return;
 
-    // Create stable handler function using current rootPath
-    const handleFileChange = async (event: FileWatcherEvent | undefined) => {
-      // Queue file watcher events during save window instead of dropping them (Fix #3)
-      if (isSavingRef.current) {
-        console.log('[FileWatcher] Queueing file change event during save operation');
-        if (event) {
-          pendingFileEventsRef.current.push(event);
+    const handleFileChange = async (event?: FileWatcherEvent) => {
+      // Skip if we're currently saving
+      if (isSavingRef.current) return;
+
+      // If active file was modified externally
+      if (event?.path === activePath) {
+        if (fileContent.isDirty) {
+          toast.showWarning(
+            'File was modified externally. Your unsaved changes may conflict. ' +
+            'Save your changes to overwrite external modifications.'
+          );
+        } else {
+          // Reload file from disk
+          await fileContent.loadFile(activePath);
+          toast.showInfo('File reloaded due to external changes');
         }
-        return;
       }
 
-      // Handle external file modifications before reloading directory (Fix #4)
-      if (event?.path) {
-        // Handle active file being modified externally (using refs to avoid stale closures)
-        if (event.path === activePathRef.current) {
-          console.log('[FileWatcher] Active file modified externally:', event.path);
-
-          if (fileContentRef.current.isDirty) {
-            // User has unsaved changes - show warning in console
-            // TODO: Implement conflict dialog for user to choose which version to keep
-            console.warn('[FileWatcher] Conflict: Active file has unsaved changes but was modified externally');
-            toastRef.current.showError('File was modified externally. Your unsaved changes may conflict.');
-          } else {
-            // No unsaved changes - safe to reload
-            console.log('[FileWatcher] Reloading active file from disk');
-            await fileContentRef.current.loadFile(event.path);
-            // Clear cache for reloaded file (Fix #4)
-            fileContentCacheRef.current.delete(event.path);
-          }
-        }
-
-        // Always clear cache and dirty state for externally modified files (Fix #4)
-        // This handles both cached and non-cached files (e.g., files evicted from LRU cache)
-        fileContentCacheRef.current.delete(event.path);
-        rawDiskContentRef.current.delete(event.path);
-        setFileDirty(event.path, false);
-      }
-
-      // Reload directory tree when files change externally
-      console.log('[FileWatcher] Reloading directory due to external file change');
+      // Reload directory tree
       await loadDirectory(rootPath);
     };
 
-    // Store handler in ref for queued event processing (Fix #3)
-    handleFileChangeRef.current = handleFileChange;
-
-    // Set up file watcher listener
     if (window.electronAPI?.fileSystem?.onFileChange) {
       window.electronAPI.fileSystem.onFileChange(handleFileChange);
     }
 
     return () => {
-      // Clean up listener
       if (window.electronAPI?.fileSystem?.removeFileChangeListener) {
         window.electronAPI.fileSystem.removeFileChangeListener(handleFileChange);
       }
     };
-    // Only re-run when rootPath or stable functions change (refs avoid stale closures)
-  }, [rootPath, loadDirectory, setFileDirty]);
+  }, [rootPath, activePath, fileContent, loadDirectory, toast]);
 
   // Listen for menu events from main process
   useEffect(() => {
