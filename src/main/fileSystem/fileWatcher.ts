@@ -14,6 +14,14 @@ import { isMarkdownFile } from './fileHandlers';
 import { TIMING_CONFIG } from '../../shared/config/timing';
 
 /**
+ * Normalize a file path for cross-platform consistency
+ * Converts backslashes to forward slashes (Windows -> Unix-style)
+ */
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/+$/, '');
+}
+
+/**
  * Active watchers map (directory path -> FSWatcher)
  */
 const watchers = new Map<string, FSWatcher>();
@@ -72,8 +80,8 @@ export function watchDirectory(
               type = 'modified';
             }
 
-            // Construct absolute path for comparison in renderer
-            const absolutePath = join(dirPath, filename);
+            // Construct absolute path and normalize for cross-platform comparison in renderer
+            const absolutePath = normalizePath(join(dirPath, filename));
 
             const event: FileWatcherEvent = {
               type,

@@ -85,7 +85,9 @@ export function useFileSwitcher({
         setIsLoadingFile(true);
 
         // Show toast for larger files that might take time to save
-        const approxSizeInBytes = fileContent.content.length * 2;
+        // Use more accurate UTF-8 calculation: most markdown is ASCII (1 byte/char)
+        // but allow for some multi-byte characters. Average ~1.5 bytes/char for markdown.
+        const approxSizeInBytes = fileContent.content.length * 1.5;
         const shouldShowToast =
           approxSizeInBytes > TIMING_CONFIG.LARGE_FILE_TOAST_THRESHOLD_BYTES;
         if (shouldShowToast) {
@@ -95,9 +97,12 @@ export function useFileSwitcher({
         const saveResult = await fileContent.saveFileSync();
 
         if (!saveResult.success) {
+          // Extract filename for clearer error message
+          const fileName = previousPathRef.current.split('/').pop() || previousPathRef.current;
+
           // Save failed - show error with retry button and prevent switch
           showToast.showError(
-            `Failed to save ${previousPathRef.current}: ${saveResult.error}. ` +
+            `Failed to save ${fileName}: ${saveResult.error}. ` +
               `Please fix the issue before switching files.`,
             0, // Don't auto-close
             {
@@ -106,13 +111,13 @@ export function useFileSwitcher({
                 // Retry save
                 const retryResult = await fileContent.saveFileSync();
                 if (retryResult.success) {
-                  showToast.showSuccess('File saved successfully');
+                  showToast.showSuccess(`${fileName} saved successfully`);
                   // Clear dirty state
                   if (retryResult.filePath) {
                     setFileDirty(retryResult.filePath, false);
                   }
                 } else {
-                  showToast.showError(`Retry failed: ${retryResult.error}`);
+                  showToast.showError(`Failed to save ${fileName}: ${retryResult.error}`);
                 }
               },
             }
@@ -149,9 +154,11 @@ export function useFileSwitcher({
         await fileContent.loadFile(currentActivePath);
         previousPathRef.current = currentActivePath;
       } catch (error) {
-        console.error('Failed to load file:', error);
+        // Extract filename for clearer error message
+        const fileName = currentActivePath.split('/').pop() || currentActivePath;
+        console.error(`Failed to load file ${currentActivePath}:`, error);
         showToast.showError(
-          `Failed to load file: ${error instanceof Error ? error.message : 'Unknown error'}`
+          `Failed to load ${fileName}: ${error instanceof Error ? error.message : 'Unknown error'}`
         );
       } finally {
         setIsLoadingFile(false);

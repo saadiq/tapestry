@@ -278,48 +278,66 @@ function AppContent() {
         clearTimeout(blurTimeoutRef.current);
       }
 
-      // Capture file path at blur time to prevent stale closure issues
-      const capturedFilePath = fileContentRef.current.filePath;
+      // Capture full state snapshot at blur time to prevent data loss during file switches
+      const capturedState = {
+        filePath: fileContentRef.current.filePath,
+        content: fileContentRef.current.content,
+        isDirty: fileContentRef.current.isDirty,
+      };
 
       blurTimeoutRef.current = setTimeout(async () => {
-        // Use refs to get latest values
-        const currentFileContent = fileContentRef.current;
+        // Get current refs for toast notifications
         const currentToast = toastRef.current;
 
-        // Only save if still on the same file that was dirty when blur occurred
-        // This prevents saving to the wrong file if user switches files during debounce
-        if (currentFileContent.isDirty &&
-            currentFileContent.filePath &&
-            currentFileContent.filePath === capturedFilePath) {
-          // Check file size to avoid blocking UI on large file saves
-          // Approximate size calculation: Assumes UTF-16 encoding (2 bytes per character)
-          // This avoids expensive Blob creation while being reasonably accurate for most text.
-          // May slightly underestimate for emoji/complex Unicode (which use 4 bytes).
-          const approxSizeInBytes = currentFileContent.content.length * 2;
+        // Only save if the file was dirty when blur occurred and we have a valid file path
+        if (!capturedState.isDirty || !capturedState.filePath) {
+          return;
+        }
 
-          // For very large files (>5MB), defer the save to avoid UI jank during blur
-          // User will be prompted to save on file switch or app close instead
-          if (approxSizeInBytes > TIMING_CONFIG.LARGE_FILE_WARNING_THRESHOLD_BYTES) {
-            console.log('[Blur Save] Skipping auto-save for large file on blur to prevent UI jank');
+        // Check file size to avoid blocking UI on large file saves
+        // Use more accurate UTF-8 calculation: most markdown is ASCII (1 byte/char)
+        // but allow for some multi-byte characters. Average ~1.5 bytes/char for markdown.
+        const approxSizeInBytes = capturedState.content.length * 1.5;
 
-            // Show per-file info toast to inform user
-            const warningKey = `${currentFileContent.filePath}-blur-warning`;
-            if (!shownBlurWarningsRef.current.has(warningKey)) {
-              currentToast.showInfo(
-                'Auto-save on window blur is disabled for large files (>5MB) to prevent UI lag. ' +
-                'Your changes will be saved when switching files or closing the app.',
-                6000 // Show for 6 seconds
-              );
-              shownBlurWarningsRef.current.add(warningKey);
-            }
-            return;
+        // For very large files (>5MB), defer the save to avoid UI jank during blur
+        // User will be prompted to save on file switch or app close instead
+        if (approxSizeInBytes > TIMING_CONFIG.LARGE_FILE_WARNING_THRESHOLD_BYTES) {
+          console.log('[Blur Save] Skipping auto-save for large file on blur to prevent UI jank');
+
+          // Show per-file info toast to inform user
+          const warningKey = `${capturedState.filePath}-blur-warning`;
+          if (!shownBlurWarningsRef.current.has(warningKey)) {
+            currentToast.showInfo(
+              'Auto-save on window blur is disabled for large files (>5MB) to prevent UI lag. ' +
+              'Your changes will be saved when switching files or closing the app.',
+              6000 // Show for 6 seconds
+            );
+            shownBlurWarningsRef.current.add(warningKey);
           }
+          return;
+        }
 
-          const result = await currentFileContent.saveFileSync();
+        // Save using captured state to ensure we save the right content even if user switched files
+        try {
+          const result = await fileSystemService.writeFile(capturedState.filePath, capturedState.content);
+
           if (!result.success) {
             // Don't prevent blur, but show warning
             currentToast.showWarning(`Auto-save failed on window blur: ${result.error}`);
+          } else {
+            // Track save completion for file watcher
+            trackSaveStart(capturedState.filePath);
+            setTimeout(() => trackSaveEnd(capturedState.filePath), 50);
+
+            // Only clear dirty state if still on the same file
+            if (fileContentRef.current.filePath === capturedState.filePath) {
+              fileContentRef.current.updateOriginalContent(capturedState.content);
+            }
           }
+        } catch (error) {
+          currentToast.showWarning(
+            `Auto-save failed on window blur: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
         }
       }, TIMING_CONFIG.BLUR_SAVE_DEBOUNCE_MS);
     };

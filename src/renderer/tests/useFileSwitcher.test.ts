@@ -398,7 +398,7 @@ describe('useFileSwitcher Hook', () => {
 
       // Simulate file1 is loaded with large content (>10KB)
       mockFileContent.filePath = '/test/file1.md';
-      mockFileContent.content = 'x'.repeat(6000); // 12KB in UTF-16
+      mockFileContent.content = 'x'.repeat(7000); // ~10.5KB with 1.5x UTF-8 multiplier
       mockFileContent.originalContent = 'Original';
       mockFileContent.isDirty = true;
 
