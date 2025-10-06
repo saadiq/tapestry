@@ -132,6 +132,9 @@ export function useFileContent(options: UseFileContentOptions = {}): UseFileCont
   /**
    * Save file immediately without debounce
    * Used when switching files to ensure data is persisted
+   *
+   * IMPORTANT: The parent component should handle isSavingRef flag
+   * by calling onBeforeSave and onAfterSave callbacks
    */
   const saveFileSync = useCallback(async (): Promise<SaveResult> => {
     // Clear any pending auto-save timer
@@ -382,7 +385,13 @@ function AppContent() {
           fileContent.isDirty) {
 
         setIsLoadingFile(true);
-        toast.showInfo('Saving previous file...');
+
+        // Only show toast for files that might take time to save
+        // Small files save so quickly the toast would be jarring
+        const shouldShowToast = fileContent.content.length > 10000; // ~10KB
+        if (shouldShowToast) {
+          toast.showInfo('Saving previous file...');
+        }
 
         const saveResult = await fileContent.saveFileSync();
 
@@ -598,6 +607,13 @@ After reviewing the architecture, adding save coordination to the FileTreeStore 
 2. Don't prevent blur if save fails (just warn)
 3. Only save if file is dirty
 
+#### Design Decision: Non-blocking Behavior
+Unlike file-switch saves which block on failure, window blur saves are **intentionally non-blocking** because:
+- We cannot prevent system-level window blur events
+- Blocking would require focus management that could conflict with the OS
+- Users expect to switch apps freely without restrictions
+- A warning toast is sufficient for the rare failure case
+
 #### Implementation
 ```typescript
 // Add to App.tsx after other effects
@@ -703,13 +719,15 @@ describe('Window blur auto-save', () => {
 ---
 
 ### Task 5: Write Comprehensive Tests
-**Files**: Create new test files
+**Files**: Create new test files (check existing structure first)
 **Time Estimate**: 2 hours
 **Priority**: Do Throughout (TDD approach)
 
 #### Test Files to Create
 
-##### 1. `src/renderer/hooks/useFileContent.test.ts`
+**NOTE**: Check existing test file structure first. If tests exist in different locations (e.g., `__tests__` folders), follow that pattern instead.
+
+##### 1. `src/renderer/hooks/useFileContent.test.ts` (or appropriate location)
 ```typescript
 import { renderHook, act } from '@testing-library/react';
 import { useFileContent } from './useFileContent';
@@ -1228,29 +1246,35 @@ The auto-save system in Tapestry is designed for simplicity and data safety:
 
 ## Implementation Order
 
+**IMPORTANT**:
+- The checkmarks (⬜) below indicate tasks to be completed, not current status
+- Start from Task 1 assuming nothing is implemented yet
+- First run `bun test` to establish baseline and check existing test structure
+- Check if any of these features already exist before implementing
+
 ### Phase 1: Foundation (Day 1)
-1. ✅ Create warning toast variant (30 min)
-2. ✅ Add `saveFileSync` to useFileContent with tests (1 hr)
-3. ✅ Write integration tests for expected behavior (1 hr)
+1. ⬜ Create warning toast variant (30 min)
+2. ⬜ Add `saveFileSync` to useFileContent with tests (1 hr)
+3. ⬜ Write integration tests for expected behavior (1 hr)
 
 **Commit**: "feat: add synchronous save method and warning toasts"
 
 ### Phase 2: Remove Cache (Day 1-2)
-1. ✅ Remove cache interfaces and refs from App.tsx (30 min)
-2. ✅ Simplify file loading effect (1 hr)
-3. ✅ Implement save-before-switch logic (1 hr)
-4. ✅ Add window blur auto-save handler (30 min)
-5. ✅ Run tests, fix issues (30 min)
+1. ⬜ Remove cache interfaces and refs from App.tsx (30 min)
+2. ⬜ Simplify file loading effect (1 hr)
+3. ⬜ Implement save-before-switch logic (1 hr)
+4. ⬜ Add window blur auto-save handler (30 min)
+5. ⬜ Run tests, fix issues (30 min)
 
 **Commit**: "refactor: remove file content cache system"
 **Commit**: "feat: add auto-save on window blur"
 
 ### Phase 3: Polish (Day 2)
-1. ✅ Simplify file watcher logic (30 min)
-2. ✅ Update beforeunload handler (15 min)
-3. ✅ Delete App.cache.test.tsx (5 min)
-4. ✅ Add remaining integration tests (1 hr)
-5. ✅ Update documentation (30 min)
+1. ⬜ Simplify file watcher logic (30 min)
+2. ⬜ Update beforeunload handler (15 min)
+3. ⬜ Delete App.cache.test.tsx (5 min)
+4. ⬜ Add remaining integration tests (1 hr)
+5. ⬜ Update documentation (30 min)
 
 **Commit**: "refactor: simplify auto-save and file watcher logic"
 **Commit**: "test: remove obsolete cache tests"
