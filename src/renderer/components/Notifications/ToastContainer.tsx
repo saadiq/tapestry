@@ -12,10 +12,10 @@ interface ToastMessage {
 
 interface ToastContextValue {
   showToast: (message: string, type: ToastType, duration?: number, action?: ToastAction) => void;
-  showSuccess: (message: string, duration?: number) => void;
+  showSuccess: (message: string, duration?: number, action?: ToastAction) => void;
   showError: (message: string, duration?: number, action?: ToastAction) => void;
-  showInfo: (message: string, duration?: number) => void;
-  showWarning: (message: string, duration?: number) => void;
+  showInfo: (message: string, duration?: number, action?: ToastAction) => void;
+  showWarning: (message: string, duration?: number, action?: ToastAction) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -40,20 +40,20 @@ export function ToastProvider({ children }: ToastProviderProps) {
     setToasts((prev) => [...prev, { id, message, type, duration, action }]);
   }, []);
 
-  const showSuccess = useCallback((message: string, duration = TIMING_CONFIG.TOAST_DURATION.SUCCESS_MS) => {
-    showToast(message, 'success', duration);
+  const showSuccess = useCallback((message: string, duration = TIMING_CONFIG.TOAST_DURATION.SUCCESS_MS, action?: ToastAction) => {
+    showToast(message, 'success', duration, action);
   }, [showToast]);
 
   const showError = useCallback((message: string, duration = TIMING_CONFIG.TOAST_DURATION.ERROR_MS, action?: ToastAction) => {
     showToast(message, 'error', duration, action);
   }, [showToast]);
 
-  const showInfo = useCallback((message: string, duration = TIMING_CONFIG.TOAST_DURATION.INFO_MS) => {
-    showToast(message, 'info', duration);
+  const showInfo = useCallback((message: string, duration = TIMING_CONFIG.TOAST_DURATION.INFO_MS, action?: ToastAction) => {
+    showToast(message, 'info', duration, action);
   }, [showToast]);
 
-  const showWarning = useCallback((message: string, duration = TIMING_CONFIG.TOAST_DURATION.WARNING_MS) => {
-    showToast(message, 'warning', duration);
+  const showWarning = useCallback((message: string, duration = TIMING_CONFIG.TOAST_DURATION.WARNING_MS, action?: ToastAction) => {
+    showToast(message, 'warning', duration, action);
   }, [showToast]);
 
   const removeToast = useCallback((id: string) => {

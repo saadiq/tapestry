@@ -24,6 +24,40 @@ import { TIMING_CONFIG } from '../shared/config/timing';
 const activeSaves = new Map<string, number>(); // normalized filePath -> timestamp
 
 /**
+ * Periodic cleanup interval for activeSaves Map
+ * Prevents memory leaks when files are opened rapidly but cleanup never triggers
+ */
+let saveTrackingCleanupInterval: NodeJS.Timeout | null = null;
+
+/**
+ * Start periodic cleanup of stale save tracking entries
+ */
+function startSaveTrackingCleanup(): void {
+  if (saveTrackingCleanupInterval) return; // Already running
+
+  saveTrackingCleanupInterval = setInterval(() => {
+    const now = Date.now();
+    const maxAge = 5000; // 5 seconds
+    for (const [path, timestamp] of activeSaves.entries()) {
+      if (now - timestamp > maxAge) {
+        activeSaves.delete(path);
+      }
+    }
+  }, 10000); // Cleanup every 10 seconds
+}
+
+/**
+ * Stop periodic cleanup (called on app unmount)
+ */
+function stopSaveTrackingCleanup(): void {
+  if (saveTrackingCleanupInterval) {
+    clearInterval(saveTrackingCleanupInterval);
+    saveTrackingCleanupInterval = null;
+  }
+  activeSaves.clear();
+}
+
+/**
  * Track that a save operation is starting for a file
  * Paths are automatically normalized for cross-platform consistency
  * Performs eager cleanup of stale entries to prevent memory growth
@@ -66,7 +100,7 @@ function trackSaveEnd(filePath: string): void {
   const normalizedPath = normalizePath(filePath);
 
   // Keep the save timestamp for debounce period to ignore file watcher events
-  // Cleanup happens eagerly in trackSaveStart, so no need to do it here
+  // Cleanup happens eagerly in trackSaveStart and periodically via interval
   setTimeout(() => {
     activeSaves.delete(normalizedPath);
   }, TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS);
@@ -87,8 +121,13 @@ function AppContent() {
   const [wordCount, setWordCount] = useState(0);
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
   const [isLoadingFile, setIsLoadingFile] = useState(false);
-  const [isSwitchingFile, setIsSwitchingFile] = useState(false);
-  const [hasShownLargeFileBlurWarning, setHasShownLargeFileBlurWarning] = useState(false);
+
+  // Synchronous guard to prevent concurrent file switches
+  // Must use ref (not state) for immediate synchronous check
+  const isSwitchingFileRef = useRef(false);
+
+  // Track which large files we've shown blur warnings for
+  const shownBlurWarningsRef = useRef(new Set<string>());
 
   // Previous path for save-before-switch
   const previousPathRef = useRef<string | null>(null);
@@ -125,8 +164,10 @@ function AppContent() {
   // Load file when activePath changes (with save-before-switch)
   useEffect(() => {
     const loadFileWithSave = async () => {
-      // Prevent concurrent file switches
-      if (isSwitchingFile) {
+      // Prevent concurrent file switches using ref for synchronous check
+      // This prevents race conditions when user rapidly clicks multiple files
+      if (isSwitchingFileRef.current) {
+        console.log('[File Switch] Already switching files, ignoring concurrent request');
         return;
       }
 
@@ -141,7 +182,7 @@ function AppContent() {
           previousPathRef.current !== activePath &&
           fileContent.isDirty) {
 
-        setIsSwitchingFile(true);
+        isSwitchingFileRef.current = true;
         setIsLoadingFile(true);
 
         // Show toast for larger files that might take time to save
@@ -178,7 +219,7 @@ function AppContent() {
             }
           );
           setIsLoadingFile(false);
-          setIsSwitchingFile(false);
+          isSwitchingFileRef.current = false;
 
           // Revert the file selection in tree to keep user on the file with unsaved changes
           // This prevents data loss by blocking the switch until save succeeds
@@ -193,7 +234,7 @@ function AppContent() {
       }
 
       // Load the new file
-      setIsSwitchingFile(true);
+      isSwitchingFileRef.current = true;
       setIsLoadingFile(true);
       try {
         // Check file size before loading to warn about large files
@@ -210,7 +251,7 @@ function AppContent() {
         toast.showError(`Failed to load file: ${error instanceof Error ? error.message : 'Unknown error'}`);
       } finally {
         setIsLoadingFile(false);
-        setIsSwitchingFile(false);
+        isSwitchingFileRef.current = false;
       }
     };
 
@@ -223,7 +264,7 @@ function AppContent() {
     if (activePath && activePath !== fileContent.filePath) {
       loadFileWithSave();
     }
-  }, [activePath, fileContent, setActiveFile, setFileDirty, toast, isSwitchingFile]);
+  }, [activePath, fileContent, setActiveFile, setFileDirty, toast, nodes]);
 
   // Update word count when content changes
   useEffect(() => {
@@ -361,69 +402,82 @@ function AppContent() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [fileContent.isDirty]);
 
-  // Auto-save on window blur
+  // Auto-save on window blur - uses refs to avoid re-registration
   useEffect(() => {
-    let blurSaveTimeout: NodeJS.Timeout | null = null;
+    const blurTimeouts: NodeJS.Timeout[] = [];
 
     const handleWindowBlur = () => {
       // Debounce rapid blur events (e.g., quick app switching)
-      if (blurSaveTimeout) {
-        clearTimeout(blurSaveTimeout);
-      }
+      // Clear all pending timeouts before creating a new one
+      blurTimeouts.forEach(clearTimeout);
+      blurTimeouts.length = 0;
 
-      blurSaveTimeout = setTimeout(async () => {
+      const timeout = setTimeout(async () => {
+        // Use refs to get latest values
+        const currentFileContent = fileContentRef.current;
+        const currentToast = toastRef.current;
+
         // Only save if there's a dirty file open
-        if (fileContent.isDirty && fileContent.filePath) {
+        if (currentFileContent.isDirty && currentFileContent.filePath) {
           // Check file size to avoid blocking UI on large file saves
           // Use approximate size (2 bytes per char for UTF-16) to avoid Blob creation overhead
-          const approxSizeInBytes = fileContent.content.length * 2;
+          const approxSizeInBytes = currentFileContent.content.length * 2;
 
           // For very large files (>5MB), defer the save to avoid UI jank during blur
           // User will be prompted to save on file switch or app close instead
           if (approxSizeInBytes > TIMING_CONFIG.LARGE_FILE_WARNING_THRESHOLD_BYTES) {
             console.log('[Blur Save] Skipping auto-save for large file on blur to prevent UI jank');
 
-            // Show one-time info toast to inform user
-            if (!hasShownLargeFileBlurWarning) {
-              toast.showInfo(
+            // Show per-file info toast to inform user
+            const warningKey = `${currentFileContent.filePath}-blur-warning`;
+            if (!shownBlurWarningsRef.current.has(warningKey)) {
+              currentToast.showInfo(
                 'Auto-save on window blur is disabled for large files (>5MB) to prevent UI lag. ' +
                 'Your changes will be saved when switching files or closing the app.',
                 6000 // Show for 6 seconds
               );
-              setHasShownLargeFileBlurWarning(true);
+              shownBlurWarningsRef.current.add(warningKey);
             }
             return;
           }
 
-          const result = await fileContent.saveFileSync();
+          const result = await currentFileContent.saveFileSync();
           if (!result.success) {
             // Don't prevent blur, but show warning
-            toast.showWarning(`Auto-save failed on window blur: ${result.error}`);
+            currentToast.showWarning(`Auto-save failed on window blur: ${result.error}`);
           }
         }
       }, TIMING_CONFIG.BLUR_SAVE_DEBOUNCE_MS);
+
+      blurTimeouts.push(timeout);
     };
 
     window.addEventListener('blur', handleWindowBlur);
 
     return () => {
       window.removeEventListener('blur', handleWindowBlur);
-      if (blurSaveTimeout) {
-        clearTimeout(blurSaveTimeout);
-      }
+      blurTimeouts.forEach(clearTimeout);
     };
-  }, [fileContent, toast]);
+  }, []); // Empty deps - register once, use refs for values
 
   // Refs for file watcher to avoid excessive re-registration
   // Must be declared AFTER fileContent is initialized
   const activePathRef = useRef(activePath);
   activePathRef.current = activePath;
 
+  // Cache normalized active path to avoid repeated normalization
+  const normalizedActivePathRef = useRef<string | null>(null);
+
   const fileContentRef = useRef(fileContent);
   fileContentRef.current = fileContent;
 
   const toastRef = useRef(toast);
   toastRef.current = toast;
+
+  // Update normalized path when active path changes
+  useEffect(() => {
+    normalizedActivePathRef.current = activePath ? normalizePath(activePath) : null;
+  }, [activePath]);
 
   // Refs for menu handlers to prevent listener re-registration
   const handlersRef = useRef({
@@ -450,37 +504,46 @@ function AppContent() {
     if (!rootPath) return;
 
     const handleFileChange = async (event?: FileWatcherEvent) => {
-      // Use refs to get latest values without causing effect re-runs
-      const currentActivePath = activePathRef.current;
-      const currentFileContent = fileContentRef.current;
-      const currentToast = toastRef.current;
+      try {
+        // Use refs to get latest values without causing effect re-runs
+        const currentActivePath = activePathRef.current;
+        const currentFileContent = fileContentRef.current;
+        const currentToast = toastRef.current;
 
-      // Normalize paths for cross-platform comparison (Windows vs Unix)
-      const normalizedEventPath = event?.path ? normalizePath(event.path) : null;
-      const normalizedActivePath = currentActivePath ? normalizePath(currentActivePath) : null;
+        // Normalize event path for cross-platform comparison (Windows vs Unix)
+        // Use cached normalized active path to avoid repeated normalization
+        const normalizedEventPath = event?.path ? normalizePath(event.path) : null;
+        const normalizedActivePath = normalizedActivePathRef.current;
 
-      // If active file was modified externally
-      if (normalizedEventPath && normalizedActivePath && normalizedEventPath === normalizedActivePath) {
-        // Skip if we're currently saving this specific file
-        if (currentActivePath && isSaveActive(currentActivePath)) {
-          // This is likely our own save, ignore it
-          return;
+        // If active file was modified externally
+        if (normalizedEventPath && normalizedActivePath && normalizedEventPath === normalizedActivePath) {
+          // Skip if we're currently saving this specific file
+          if (currentActivePath && isSaveActive(currentActivePath)) {
+            // This is likely our own save, ignore it
+            return;
+          }
+
+          if (currentFileContent.isDirty) {
+            currentToast.showWarning(
+              'File was modified externally. Your unsaved changes may conflict. ' +
+              'Save your changes to overwrite external modifications.'
+            );
+          } else {
+            // Reload file from disk
+            await currentFileContent.loadFile(currentActivePath);
+            currentToast.showInfo('File reloaded due to external changes');
+          }
         }
 
-        if (currentFileContent.isDirty) {
-          currentToast.showWarning(
-            'File was modified externally. Your unsaved changes may conflict. ' +
-            'Save your changes to overwrite external modifications.'
-          );
-        } else {
-          // Reload file from disk
-          await currentFileContent.loadFile(currentActivePath);
-          currentToast.showInfo('File reloaded due to external changes');
-        }
+        // Reload directory tree
+        await loadDirectory(rootPath);
+      } catch (error) {
+        console.error('[File Watcher] Error handling file change:', error);
+        const currentToast = toastRef.current;
+        currentToast.showError(
+          `Failed to refresh directory: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
       }
-
-      // Reload directory tree
-      await loadDirectory(rootPath);
     };
 
     if (window.electronAPI?.fileSystem?.onFileChange) {
@@ -520,6 +583,14 @@ function AppContent() {
       });
     };
   }, []); // Empty deps - runs only once on mount
+
+  // Start/stop save tracking cleanup on mount/unmount
+  useEffect(() => {
+    startSaveTrackingCleanup();
+    return () => {
+      stopSaveTrackingCleanup();
+    };
+  }, []);
 
   return (
     <MainLayout
