@@ -11,6 +11,7 @@ import type {
   FileOperationResult,
 } from '../../shared/types/fileSystem';
 import { isMarkdownFile } from './fileHandlers';
+import { TIMING_CONFIG } from '../../shared/config/timing';
 
 /**
  * Active watchers map (directory path -> FSWatcher)
@@ -55,7 +56,7 @@ export function watchDirectory(
           clearTimeout(timerId);
         }
 
-        // Wait 100ms before sending event - this groups multiple rapid events into one
+        // Use centralized debounce timing to group multiple rapid events into one
         debounceTimers.set(
           dirPath,
           setTimeout(() => {
@@ -82,7 +83,7 @@ export function watchDirectory(
 
             // Send event to renderer
             mainWindow.webContents.send('file-watcher-event', event);
-          }, 100)
+          }, TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS)
         );
       }
     );

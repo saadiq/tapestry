@@ -15,9 +15,10 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useFileContent } from './hooks/useFileContent';
+import { useFileSwitcher } from './hooks/useFileSwitcher';
 import { fileSystemService } from './services/fileSystemService';
 import type { FileWatcherEvent } from '../shared/types/fileSystem';
-import { normalizePath, getDirectoryPath, isPathWithinDirectory } from './utils/pathUtils';
+import { normalizePath } from './utils/pathUtils';
 import { TIMING_CONFIG } from '../shared/config/timing';
 
 // Track files we're currently saving to ignore file watcher events
@@ -65,13 +66,15 @@ function stopSaveTrackingCleanup(): void {
 function trackSaveStart(filePath: string): void {
   const normalizedPath = normalizePath(filePath);
 
-  // Eagerly clean up stale entries before adding new one
-  // This prevents memory growth during rapid file operations
-  const now = Date.now();
-  const maxAge = 5000; // 5 seconds
-  for (const [path, timestamp] of activeSaves.entries()) {
-    if (now - timestamp > maxAge) {
-      activeSaves.delete(path);
+  // Only perform eager cleanup if map is getting large (>50 entries)
+  // This optimizes performance for normal usage while preventing memory leaks
+  if (activeSaves.size > 50) {
+    const now = Date.now();
+    const maxAge = 5000; // 5 seconds
+    for (const [path, timestamp] of activeSaves.entries()) {
+      if (now - timestamp > maxAge) {
+        activeSaves.delete(path);
+      }
     }
   }
 
@@ -120,17 +123,9 @@ function AppContent() {
   const toast = useToast();
   const [wordCount, setWordCount] = useState(0);
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
-  const [isLoadingFile, setIsLoadingFile] = useState(false);
-
-  // Synchronous guard to prevent concurrent file switches
-  // Must use ref (not state) for immediate synchronous check
-  const isSwitchingFileRef = useRef(false);
 
   // Track which large files we've shown blur warnings for
   const shownBlurWarningsRef = useRef(new Set<string>());
-
-  // Previous path for save-before-switch
-  const previousPathRef = useRef<string | null>(null);
 
   // Ref to track current file path for save callbacks
   const currentFilePathRef = useRef<string | null>(null);
@@ -161,117 +156,17 @@ function AppContent() {
   // Update the ref when filePath changes
   currentFilePathRef.current = fileContent.filePath;
 
-  // Load file when activePath changes (with save-before-switch)
-  useEffect(() => {
-    const loadFileWithSave = async () => {
-      // Prevent concurrent file switches using ref for synchronous check
-      // This prevents race conditions when user rapidly clicks multiple files
-      if (isSwitchingFileRef.current) {
-        console.log('[File Switch] Already switching files, ignoring concurrent request');
-        return;
-      }
-
-      // Clean up previous path ref when no file is open
-      if (!activePath) {
-        previousPathRef.current = null;
-        return;
-      }
-
-      // Set switching flag immediately to prevent race conditions
-      isSwitchingFileRef.current = true;
-
-      // Save previous file if it was dirty
-      if (previousPathRef.current &&
-          previousPathRef.current !== activePath &&
-          fileContent.isDirty) {
-
-        setIsLoadingFile(true);
-
-        // Show toast for larger files that might take time to save
-        // Approximate size calculation: Assumes UTF-16 encoding (2 bytes per character)
-        // This avoids expensive Blob creation while being reasonably accurate for most text.
-        // May slightly underestimate for emoji/complex Unicode (which use 4 bytes).
-        const approxSizeInBytes = fileContent.content.length * 2;
-        const shouldShowToast = approxSizeInBytes > TIMING_CONFIG.LARGE_FILE_TOAST_THRESHOLD_BYTES;
-        if (shouldShowToast) {
-          toast.showInfo('Saving previous file...');
-        }
-
-        const saveResult = await fileContent.saveFileSync();
-
-        if (!saveResult.success) {
-          // Save failed - show error with retry button and prevent switch
-          toast.showError(
-            `Failed to save ${previousPathRef.current}: ${saveResult.error}. ` +
-            `Please fix the issue before switching files.`,
-            0, // Don't auto-close
-            {
-              label: 'Retry',
-              onClick: async () => {
-                // Retry save
-                const retryResult = await fileContent.saveFileSync();
-                if (retryResult.success) {
-                  toast.showSuccess('File saved successfully');
-                  // Clear dirty state
-                  if (retryResult.filePath) {
-                    setFileDirty(retryResult.filePath, false);
-                  }
-                } else {
-                  toast.showError(`Retry failed: ${retryResult.error}`);
-                }
-              }
-            }
-          );
-          setIsLoadingFile(false);
-          isSwitchingFileRef.current = false;
-
-          // Revert the file selection in tree to keep user on the file with unsaved changes
-          // This prevents data loss by blocking the switch until save succeeds
-          if (previousPathRef.current !== activePath) {
-            setActiveFile(previousPathRef.current);
-          }
-          return;
-        }
-
-        // Clear dirty state in tree for saved file
-        setFileDirty(previousPathRef.current, false);
-      }
-
-      // Load the new file
-      setIsLoadingFile(true);
-      try {
-        // Check file size before loading to warn about large files
-        const fileNode = nodes.find(node => node.path === activePath);
-        if (fileNode?.size && fileNode.size > TIMING_CONFIG.LARGE_FILE_WARNING_THRESHOLD_BYTES) {
-          const sizeMB = (fileNode.size / 1_048_576).toFixed(1);
-          toast.showWarning(`Loading large file (${sizeMB} MB). This may take a moment...`);
-        }
-
-        await fileContent.loadFile(activePath);
-        previousPathRef.current = activePath;
-      } catch (error) {
-        console.error('Failed to load file:', error);
-        toast.showError(`Failed to load file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      } finally {
-        setIsLoadingFile(false);
-        isSwitchingFileRef.current = false;
-      }
-    };
-
-    // Only trigger load when activePath changes and differs from current file
-    // This guard prevents infinite loops when reverting selection after failed save:
-    // - Failed save triggers setActiveFile(previousPathRef.current)
-    // - previousPathRef.current === fileContent.filePath (hasn't changed yet)
-    // - activePath becomes previousPathRef.current
-    // - activePath === fileContent.filePath, so effect doesn't re-run
-    // Additional check: Don't re-trigger if we're switching back to the previous path
-    // (handles edge case where user rapidly clicks same file multiple times)
-    if (activePath &&
-        activePath !== fileContent.filePath &&
-        activePath !== previousPathRef.current) {
-      loadFileWithSave();
-    }
-  }, [activePath, fileContent, setActiveFile, setFileDirty, toast, nodes]);
+  // Use file switcher hook for file loading logic
+  const { isLoadingFile, ensureDirectoryContext } = useFileSwitcher({
+    activePath,
+    fileContent,
+    nodes,
+    rootPath,
+    setActiveFile,
+    setFileDirty,
+    loadDirectory,
+    showToast: toast,
+  });
 
   // Update word count when content changes
   useEffect(() => {
@@ -309,44 +204,6 @@ function AppContent() {
       toast.showError(`Failed to save file: ${fileContent.error}`);
     }
   }, [fileContent, toast]);
-
-  const ensureDirectoryContext = useCallback(
-    async (filePath: string) => {
-      // Defensive check for invalid file path
-      if (!filePath) {
-        console.warn('ensureDirectoryContext: received empty filePath');
-        return;
-      }
-
-      const directoryPath = getDirectoryPath(filePath);
-
-      if (!directoryPath) {
-        return;
-      }
-
-      const normalizedFilePath = normalizePath(filePath);
-      const normalizedRoot = rootPath ? normalizePath(rootPath) : null;
-
-      // Additional defensive check after normalization
-      if (normalizedFilePath === '') {
-        console.warn('ensureDirectoryContext: filePath normalized to empty string');
-        return;
-      }
-
-      const shouldReloadTree =
-        !normalizedRoot || !isPathWithinDirectory(normalizedFilePath, normalizedRoot);
-
-      if (shouldReloadTree) {
-        if (rootPath) {
-          await fileSystemService.unwatchDirectory(rootPath);
-        }
-
-        await loadDirectory(directoryPath);
-        await fileSystemService.watchDirectory(directoryPath);
-      }
-    },
-    [loadDirectory, rootPath]
-  );
 
   const handleOpenFile = useCallback(async () => {
     const result = await fileSystemService.openFile();

@@ -23,7 +23,11 @@ export function normalizePath(path: string): string {
     console.warn('normalizePath: received null, undefined, or empty path');
     return '';
   }
-  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  // Convert backslashes to forward slashes, collapse multiple slashes, remove trailing slashes
+  const normalized = path
+    .replace(/\\/g, '/') // Windows to Unix style
+    .replace(/\/+/g, '/') // Collapse multiple slashes
+    .replace(/\/+$/, ''); // Remove trailing slashes
   // Preserve root directory: if result is empty but original wasn't, it was a root path
   return normalized === '' && path !== '' ? '/' : normalized;
 }

@@ -108,10 +108,11 @@ export function useFileContent(
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load file';
+      const errorWithContext = `Failed to load ${filePath}: ${errorMessage}`;
       setState((prev) => ({
         ...prev,
         loading: false,
-        error: errorMessage,
+        error: errorWithContext,
       }));
     }
   }, []);
@@ -181,10 +182,11 @@ export function useFileContent(
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to save file';
+      const errorWithContext = `Failed to save ${filePath}: ${errorMessage}`;
       setState((prev) => ({
         ...prev,
         saving: false,
-        error: errorMessage,
+        error: errorWithContext,
       }));
       onAfterSave?.(false);
       return false;
@@ -268,15 +270,16 @@ export function useFileContent(
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to save file';
+      const errorWithContext = `Failed to save ${filePath}: ${errorMessage}`;
       setState((prev) => ({
         ...prev,
         saving: false,
-        error: errorMessage,
+        error: errorWithContext,
       }));
       onAfterSave?.(false);
       return {
         success: false,
-        error: errorMessage,
+        error: errorMessage, // Return base error message for retry logic
         filePath
       };
     }

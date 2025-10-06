@@ -45,6 +45,12 @@ describe('pathUtils', () => {
       expect(normalizePath('./test/file.md')).toBe('./test/file.md');
       expect(normalizePath('../test/file.md')).toBe('../test/file.md');
     });
+
+    it('should collapse multiple consecutive slashes', () => {
+      expect(normalizePath('/Users//test///file.md')).toBe('/Users/test/file.md');
+      expect(normalizePath('C://Users//test//file.md')).toBe('C:/Users/test/file.md');
+      expect(normalizePath('/path//to///file.md')).toBe('/path/to/file.md');
+    });
   });
 
   describe('getDirectoryPath', () => {
