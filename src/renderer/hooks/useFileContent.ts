@@ -144,8 +144,9 @@ export function useFileContent(
 
     try {
       // Race the save operation against a timeout to prevent eternal hangs
+      let timeoutId: NodeJS.Timeout;
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           reject(new Error(`Save operation timed out after ${saveTimeout}ms`));
         }, saveTimeout);
       });
@@ -154,6 +155,9 @@ export function useFileContent(
         fileSystemService.writeFile(filePath, state.content),
         timeoutPromise
       ]);
+
+      // Clear timeout to prevent memory leak
+      clearTimeout(timeoutId!);
 
       if (result.success) {
         setState((prev) => ({
@@ -218,8 +222,9 @@ export function useFileContent(
 
     try {
       // Race the save operation against a timeout
+      let timeoutId: NodeJS.Timeout;
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           reject(new Error(`Save operation timed out after ${saveTimeout}ms`));
         }, saveTimeout);
       });
@@ -228,6 +233,9 @@ export function useFileContent(
         fileSystemService.writeFile(filePath, state.content),
         timeoutPromise
       ]);
+
+      // Clear timeout to prevent memory leak
+      clearTimeout(timeoutId!);
 
       if (result.success) {
         setState((prev) => ({

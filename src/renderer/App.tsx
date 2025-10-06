@@ -26,10 +26,22 @@ const activeSaves = new Map<string, number>(); // normalized filePath -> timesta
 /**
  * Track that a save operation is starting for a file
  * Paths are automatically normalized for cross-platform consistency
+ * Performs eager cleanup of stale entries to prevent memory growth
  */
 function trackSaveStart(filePath: string): void {
   const normalizedPath = normalizePath(filePath);
-  activeSaves.set(normalizedPath, Date.now());
+
+  // Eagerly clean up stale entries before adding new one
+  // This prevents memory growth during rapid file operations
+  const now = Date.now();
+  const maxAge = 5000; // 5 seconds
+  for (const [path, timestamp] of activeSaves.entries()) {
+    if (now - timestamp > maxAge) {
+      activeSaves.delete(path);
+    }
+  }
+
+  activeSaves.set(normalizedPath, now);
 }
 
 /**
@@ -54,17 +66,9 @@ function trackSaveEnd(filePath: string): void {
   const normalizedPath = normalizePath(filePath);
 
   // Keep the save timestamp for debounce period to ignore file watcher events
+  // Cleanup happens eagerly in trackSaveStart, so no need to do it here
   setTimeout(() => {
     activeSaves.delete(normalizedPath);
-
-    // Clean up stale entries older than 5 seconds to prevent memory growth
-    const now = Date.now();
-    const maxAge = 5000;
-    for (const [path, timestamp] of activeSaves.entries()) {
-      if (now - timestamp > maxAge) {
-        activeSaves.delete(path);
-      }
-    }
   }, TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS);
 }
 
@@ -83,6 +87,8 @@ function AppContent() {
   const [wordCount, setWordCount] = useState(0);
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
   const [isLoadingFile, setIsLoadingFile] = useState(false);
+  const [isSwitchingFile, setIsSwitchingFile] = useState(false);
+  const [hasShownLargeFileBlurWarning, setHasShownLargeFileBlurWarning] = useState(false);
 
   // Previous path for save-before-switch
   const previousPathRef = useRef<string | null>(null);
@@ -119,6 +125,11 @@ function AppContent() {
   // Load file when activePath changes (with save-before-switch)
   useEffect(() => {
     const loadFileWithSave = async () => {
+      // Prevent concurrent file switches
+      if (isSwitchingFile) {
+        return;
+      }
+
       // Clean up previous path ref when no file is open
       if (!activePath) {
         previousPathRef.current = null;
@@ -130,6 +141,7 @@ function AppContent() {
           previousPathRef.current !== activePath &&
           fileContent.isDirty) {
 
+        setIsSwitchingFile(true);
         setIsLoadingFile(true);
 
         // Show toast for larger files that might take time to save
@@ -166,6 +178,7 @@ function AppContent() {
             }
           );
           setIsLoadingFile(false);
+          setIsSwitchingFile(false);
 
           // Revert the file selection in tree to keep user on the file with unsaved changes
           // This prevents data loss by blocking the switch until save succeeds
@@ -180,6 +193,7 @@ function AppContent() {
       }
 
       // Load the new file
+      setIsSwitchingFile(true);
       setIsLoadingFile(true);
       try {
         // Check file size before loading to warn about large files
@@ -196,6 +210,7 @@ function AppContent() {
         toast.showError(`Failed to load file: ${error instanceof Error ? error.message : 'Unknown error'}`);
       } finally {
         setIsLoadingFile(false);
+        setIsSwitchingFile(false);
       }
     };
 
@@ -208,7 +223,7 @@ function AppContent() {
     if (activePath && activePath !== fileContent.filePath) {
       loadFileWithSave();
     }
-  }, [activePath, fileContent, setActiveFile, setFileDirty, toast]);
+  }, [activePath, fileContent, setActiveFile, setFileDirty, toast, isSwitchingFile]);
 
   // Update word count when content changes
   useEffect(() => {
@@ -249,6 +264,12 @@ function AppContent() {
 
   const ensureDirectoryContext = useCallback(
     async (filePath: string) => {
+      // Defensive check for invalid file path
+      if (!filePath) {
+        console.warn('ensureDirectoryContext: received empty filePath');
+        return;
+      }
+
       const directoryPath = getDirectoryPath(filePath);
 
       if (!directoryPath) {
@@ -257,6 +278,13 @@ function AppContent() {
 
       const normalizedFilePath = normalizePath(filePath);
       const normalizedRoot = rootPath ? normalizePath(rootPath) : null;
+
+      // Additional defensive check after normalization
+      if (normalizedFilePath === '') {
+        console.warn('ensureDirectoryContext: filePath normalized to empty string');
+        return;
+      }
+
       const shouldReloadTree =
         !normalizedRoot || !isPathWithinDirectory(normalizedFilePath, normalizedRoot);
 
@@ -354,6 +382,16 @@ function AppContent() {
           // User will be prompted to save on file switch or app close instead
           if (approxSizeInBytes > TIMING_CONFIG.LARGE_FILE_WARNING_THRESHOLD_BYTES) {
             console.log('[Blur Save] Skipping auto-save for large file on blur to prevent UI jank');
+
+            // Show one-time info toast to inform user
+            if (!hasShownLargeFileBlurWarning) {
+              toast.showInfo(
+                'Auto-save on window blur is disabled for large files (>5MB) to prevent UI lag. ' +
+                'Your changes will be saved when switching files or closing the app.',
+                6000 // Show for 6 seconds
+              );
+              setHasShownLargeFileBlurWarning(true);
+            }
             return;
           }
 

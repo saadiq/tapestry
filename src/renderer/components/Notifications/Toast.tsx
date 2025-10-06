@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
+import { TIMING_CONFIG } from '../../../shared/config/timing';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -16,7 +17,7 @@ interface ToastProps {
   action?: ToastAction; // Optional action button
 }
 
-export function Toast({ message, type, onClose, duration = 3000, action }: ToastProps) {
+export function Toast({ message, type, onClose, duration = TIMING_CONFIG.TOAST_DURATION.INFO_MS, action }: ToastProps) {
   useEffect(() => {
     if (duration > 0) {
       const timer = setTimeout(() => {
