@@ -3,6 +3,7 @@
  */
 
 import { FSWatcher, watch } from 'fs';
+import { join } from 'path';
 import { BrowserWindow } from 'electron';
 import type {
   FileWatcherEvent,
@@ -70,9 +71,12 @@ export function watchDirectory(
               type = 'modified';
             }
 
+            // Construct absolute path for comparison in renderer
+            const absolutePath = join(dirPath, filename);
+
             const event: FileWatcherEvent = {
               type,
-              path: filename,
+              path: absolutePath,
               timestamp: new Date(),
             };
 

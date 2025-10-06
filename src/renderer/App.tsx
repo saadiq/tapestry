@@ -279,7 +279,18 @@ function AppContent() {
     };
   }, [fileContent, toast]);
 
-  // File watcher - fixed memory leak by using refs
+  // Refs for file watcher to avoid excessive re-registration
+  // Must be declared AFTER fileContent is initialized
+  const activePathRef = useRef(activePath);
+  activePathRef.current = activePath;
+
+  const fileContentRef = useRef(fileContent);
+  fileContentRef.current = fileContent;
+
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+
+  // File watcher - uses refs for stability
   useEffect(() => {
     if (!rootPath) return;
 
