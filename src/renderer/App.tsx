@@ -334,11 +334,15 @@ function AppContent() {
     };
   }, []); // Empty deps - register once, use refs for values
 
-  // Clear blur timeout when file is closed to prevent stale saves
+  // Clear blur timeout and warnings when file is closed to prevent stale saves and memory leaks
   useEffect(() => {
-    if (!fileContent.filePath && blurTimeoutRef.current) {
-      clearTimeout(blurTimeoutRef.current);
-      blurTimeoutRef.current = null;
+    if (!fileContent.filePath) {
+      if (blurTimeoutRef.current) {
+        clearTimeout(blurTimeoutRef.current);
+        blurTimeoutRef.current = null;
+      }
+      // Clear shown blur warnings to prevent memory leak
+      shownBlurWarningsRef.current.clear();
     }
   }, [fileContent.filePath]);
 

@@ -91,6 +91,9 @@ export function useFileContent(
    * Load file content
    */
   const loadFile = useCallback(async (filePath: string) => {
+    // Clear any pending auto-save timer to prevent saving to wrong file
+    clearAutoSaveTimer();
+
     setState((prev) => ({ ...prev, loading: true, error: null }));
 
     try {
@@ -115,7 +118,7 @@ export function useFileContent(
         error: errorWithContext,
       }));
     }
-  }, []);
+  }, [clearAutoSaveTimer]);
 
   /**
    * Save file content with timeout protection
