@@ -3,6 +3,7 @@
  */
 
 import { FSWatcher, watch } from 'fs';
+import { join } from 'path';
 import { BrowserWindow } from 'electron';
 import type {
   FileWatcherEvent,
@@ -10,6 +11,15 @@ import type {
   FileOperationResult,
 } from '../../shared/types/fileSystem';
 import { isMarkdownFile } from './fileHandlers';
+import { TIMING_CONFIG } from '../../shared/config/timing';
+
+/**
+ * Normalize a file path for cross-platform consistency
+ * Converts backslashes to forward slashes (Windows -> Unix-style)
+ */
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/+$/, '');
+}
 
 /**
  * Active watchers map (directory path -> FSWatcher)
@@ -54,7 +64,7 @@ export function watchDirectory(
           clearTimeout(timerId);
         }
 
-        // Wait 100ms before sending event - this groups multiple rapid events into one
+        // Use centralized debounce timing to group multiple rapid events into one
         debounceTimers.set(
           dirPath,
           setTimeout(() => {
@@ -70,15 +80,18 @@ export function watchDirectory(
               type = 'modified';
             }
 
+            // Construct absolute path and normalize for cross-platform comparison in renderer
+            const absolutePath = normalizePath(join(dirPath, filename));
+
             const event: FileWatcherEvent = {
               type,
-              path: filename,
+              path: absolutePath,
               timestamp: new Date(),
             };
 
             // Send event to renderer
             mainWindow.webContents.send('file-watcher-event', event);
-          }, 100)
+          }, TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS)
         );
       }
     );

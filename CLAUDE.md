@@ -257,11 +257,27 @@ Directory watching lifecycle:
 
 ### Auto-Save Implementation
 
-Auto-save uses a debounced pattern in `useFileContent`:
-- Content changes update local state immediately
-- Debounced save function (1000ms default) writes to disk
+Auto-save uses a simplified save-on-switch pattern:
+- **Auto-save on file switch**: When switching files, the current file is automatically saved before loading the next file
+- **Auto-save on window blur**: When the window loses focus, dirty files are automatically saved
+- **Debounced auto-save**: Content changes trigger a debounced save (1000ms default) for the active file
+- **Save timeout**: Sync saves have a 30-second timeout to prevent eternal hangs on slow I/O or network drives
+- **Error handling**: Failed saves block file switching and display error toast notifications
 - `isDirty` flag tracks unsaved changes
 - `beforeunload` event warns if closing with unsaved changes
+
+**Performance Considerations:**
+- **No caching**: The multi-file cache system was removed for simplicity and data safety
+- **File reload on switch**: Each file switch reads from disk rather than restoring from cache
+- **Acceptable tradeoff**: For typical markdown files (<1MB), disk reads are fast enough (<50ms on SSD)
+- **Large file impact**: Files >5MB may experience noticeable reload delays (500ms+) on file switch
+- **Network drives**: Files on network-mounted drives may be slower to reload; consider copying to local storage for frequently-accessed large files
+
+The simplified approach trades a small performance cost on file switching for:
+- Clearer user experience (always see fresh file content)
+- Reduced complexity (~400 lines of cache code removed)
+- Better data safety (no stale cache vs. disk conflicts)
+- Easier debugging and maintenance
 
 ## Code Patterns
 

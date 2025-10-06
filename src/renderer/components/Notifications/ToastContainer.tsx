@@ -1,18 +1,21 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { Toast, ToastType } from './Toast';
+import { Toast, ToastType, ToastAction } from './Toast';
+import { TIMING_CONFIG } from '../../../shared/config/timing';
 
 interface ToastMessage {
   id: string;
   message: string;
   type: ToastType;
   duration?: number;
+  action?: ToastAction;
 }
 
 interface ToastContextValue {
-  showToast: (message: string, type: ToastType, duration?: number) => void;
-  showSuccess: (message: string, duration?: number) => void;
-  showError: (message: string, duration?: number) => void;
-  showInfo: (message: string, duration?: number) => void;
+  showToast: (message: string, type: ToastType, duration?: number, action?: ToastAction) => void;
+  showSuccess: (message: string, duration?: number, action?: ToastAction) => void;
+  showError: (message: string, duration?: number, action?: ToastAction) => void;
+  showInfo: (message: string, duration?: number, action?: ToastAction) => void;
+  showWarning: (message: string, duration?: number, action?: ToastAction) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -32,21 +35,25 @@ interface ToastProviderProps {
 export function ToastProvider({ children }: ToastProviderProps) {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const showToast = useCallback((message: string, type: ToastType, duration = 3000) => {
+  const showToast = useCallback((message: string, type: ToastType, duration?: number, action?: ToastAction) => {
     const id = `toast-${Date.now()}-${Math.random()}`;
-    setToasts((prev) => [...prev, { id, message, type, duration }]);
+    setToasts((prev) => [...prev, { id, message, type, duration, action }]);
   }, []);
 
-  const showSuccess = useCallback((message: string, duration = 3000) => {
-    showToast(message, 'success', duration);
+  const showSuccess = useCallback((message: string, duration = TIMING_CONFIG.TOAST_DURATION.SUCCESS_MS, action?: ToastAction) => {
+    showToast(message, 'success', duration, action);
   }, [showToast]);
 
-  const showError = useCallback((message: string, duration = 5000) => {
-    showToast(message, 'error', duration);
+  const showError = useCallback((message: string, duration = TIMING_CONFIG.TOAST_DURATION.ERROR_MS, action?: ToastAction) => {
+    showToast(message, 'error', duration, action);
   }, [showToast]);
 
-  const showInfo = useCallback((message: string, duration = 3000) => {
-    showToast(message, 'info', duration);
+  const showInfo = useCallback((message: string, duration = TIMING_CONFIG.TOAST_DURATION.INFO_MS, action?: ToastAction) => {
+    showToast(message, 'info', duration, action);
+  }, [showToast]);
+
+  const showWarning = useCallback((message: string, duration = TIMING_CONFIG.TOAST_DURATION.WARNING_MS, action?: ToastAction) => {
+    showToast(message, 'warning', duration, action);
   }, [showToast]);
 
   const removeToast = useCallback((id: string) => {
@@ -54,7 +61,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
   }, []);
 
   return (
-    <ToastContext.Provider value={{ showToast, showSuccess, showError, showInfo }}>
+    <ToastContext.Provider value={{ showToast, showSuccess, showError, showInfo, showWarning }}>
       {children}
 
       {/* Toast Container */}
@@ -66,6 +73,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
               message={toast.message}
               type={toast.type}
               duration={toast.duration}
+              action={toast.action}
               onClose={() => removeToast(toast.id)}
             />
           ))}
