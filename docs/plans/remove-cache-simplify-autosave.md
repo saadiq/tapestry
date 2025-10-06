@@ -11,8 +11,8 @@
 
 ### Audit Checklist
 1. **Toast System**:
+   - [ ] Check if DaisyUI's `alert-warning` class exists (likely does in v5)
    - [ ] Check if `showWarning` method exists in ToastContainer
-   - [ ] Check if 'warning' variant exists in Toast component
    - [ ] Document current toast variants available
 
 2. **useFileContent Hook**:
@@ -28,12 +28,21 @@
 4. **Test Structure**:
    - [ ] Identify test file locations and naming conventions
    - [ ] Check if App.cache.test.tsx exists
+   - [ ] List all tests that depend on cache behavior
    - [ ] Document bun test patterns used
 
 ### After Audit
-- Update this plan based on findings
+- Update this plan document with findings
 - Mark tasks as "Already Done" if features exist
+- Identify all breaking test changes before deletion
 - Adjust implementation approach accordingly
+
+### Recommended Implementation Approach
+Based on audit findings, proceed with **incremental implementation**:
+1. Complete Phase 1 (Foundation) → Commit
+2. Complete Phase 2 (Remove Cache) → Commit
+3. Complete Phase 3 (Polish) → Commit
+4. This allows for easier rollback if issues arise
 
 ## Executive Summary
 
@@ -418,8 +427,9 @@ function AppContent() {
 
         // Only show toast for files that might take time to save
         // Small files save so quickly the toast would be jarring
-        const sizeInBytes = new Blob([fileContent.content]).size;
-        const shouldShowToast = sizeInBytes > 10240; // 10KB in bytes
+        // Use approximate size (2 bytes per char for UTF-16) to avoid Blob creation
+        const approxSizeInBytes = fileContent.content.length * 2;
+        const shouldShowToast = approxSizeInBytes > 10240; // 10KB threshold
         if (shouldShowToast) {
           toast.showInfo('Saving previous file...');
         }
@@ -648,6 +658,10 @@ Unlike file-switch saves which block on failure, window blur saves are **intenti
 #### Implementation
 ```typescript
 // Add to App.tsx after other effects
+
+// Configurable debounce delay for window blur saves
+const BLUR_SAVE_DEBOUNCE_MS = 100;
+
 useEffect(() => {
   let blurSaveTimeout: NodeJS.Timeout | null = null;
 
@@ -667,7 +681,7 @@ useEffect(() => {
           toast.showWarning(`Auto-save failed on window blur: ${result.error}`);
         }
       }
-    }, 100); // 100ms debounce for rapid switching
+    }, BLUR_SAVE_DEBOUNCE_MS);
   };
 
   window.addEventListener('blur', handleWindowBlur);
@@ -678,7 +692,7 @@ useEffect(() => {
       clearTimeout(blurSaveTimeout);
     }
   };
-}, [fileContent, toast]);
+}, [fileContent.isDirty, fileContent.filePath, fileContent.saveFileSync, toast]);
 ```
 
 #### Testing
@@ -866,11 +880,21 @@ describe('useFileContent - saveFileSync', () => {
     expect(mockWriteFile).not.toHaveBeenCalled();
   });
 
-  // Note: Bun doesn't have built-in fake timers yet, this test would need adaptation
+  // Note: Bun's timer limitation workarounds:
+  // Option 1: Skip timer tests (simplest)
   it.skip('cancels pending auto-save timer when saving synchronously', async () => {
-    // TODO: Implement when bun adds timer mocking support
-    // Or use a custom timer implementation for testing
-    // This test would verify that saveFileSync cancels any pending auto-save timer
+    // Skipped due to Bun's lack of timer mocking
+  });
+
+  // Option 2: Use real timers with shorter delays (recommended for critical paths)
+  it('cancels pending auto-save timer - real timer test', async () => {
+    // Use very short delays (10ms) and real timers
+    const { result } = renderHook(() => useFileContent({
+      enableAutoSave: true,
+      autoSaveDelay: 10 // Very short for testing
+    }));
+
+    // ... test implementation with real timing ...
   });
 });
 ```
@@ -1027,10 +1051,26 @@ The auto-save system in Tapestry is designed for simplicity and data safety:
 4. Test window blur auto-save
 
 ### Test Files to Update/Delete
+
+#### Strategy for Breaking Tests
+1. **First identify** all tests that depend on cache behavior
+2. **Then decide** for each test:
+   - Can it be adapted to test new behavior? → Update it
+   - Is it entirely obsolete? → Delete it
+   - Is it testing something still relevant? → Keep and fix
+3. **Delete `App.cache.test.tsx`** only after confirming it's entirely obsolete
+
+#### Files to Change
 - **DELETE**: `src/renderer/tests/App.cache.test.tsx` - entire file tests removed cache
 - **UPDATE**: Any test that mocks or expects `fileContentCacheRef`
 - **ADD**: Tests for `saveFileSync` method
 - **ADD**: Tests for window blur handler
+
+#### Test Strategy for Bun Limitations
+- **Timer tests**: Use one of these approaches:
+  1. Skip with `it.skip()` for non-critical timer tests
+  2. Use real timers with short delays (10-50ms) for critical tests
+  3. Document skipped tests for future improvement when Bun adds timer mocking
 
 ### Manual Testing Checklist
 - [ ] Open app with multiple markdown files
@@ -1164,6 +1204,31 @@ The simplified approach (dropping events during save) is better than queueing th
 - File watcher will fire again after save for any real external changes
 - The directory reload will catch any structural changes
 - Avoids complex queue management for a rare edge case
+
+## Known Issues and Solutions
+
+### Issue 1: Blob Creation for Size Check
+**Problem**: Creating a Blob just to check size is inefficient
+**Solution**: Use approximate size calculation:
+```typescript
+const approxSizeInBytes = fileContent.content.length * 2; // 2 bytes per char
+```
+
+### Issue 2: useEffect Over-Rendering
+**Problem**: Depending on entire `fileContent` object causes unnecessary re-renders
+**Solution**: Use specific properties in dependency array:
+```typescript
+[fileContent.isDirty, fileContent.filePath, fileContent.saveFileSync, toast]
+```
+
+### Issue 3: File Selection Revert Loop
+**Problem**: Calling `setActiveFile(previousPathRef.current)` might trigger another load
+**Solution**: The guard `activePath !== fileContent.filePath` prevents this, but add explicit check:
+```typescript
+if (previousPathRef.current !== activePath) {
+  setActiveFile(previousPathRef.current);
+}
+```
 
 ## Appendix: Removed Code
 
