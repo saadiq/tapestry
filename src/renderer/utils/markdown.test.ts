@@ -3,8 +3,14 @@
  * Focus on markdownToJSON() conversion and round-trip fidelity
  */
 
-import { describe, it, expect, vi } from 'vitest';
-import { markdownToJSON, createMarkdownParser, createTurndownService } from './markdown';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  markdownToJSON,
+  createMarkdownParser,
+  createTurndownService,
+  convertTipTapTableToMarkdown,
+  resetTableWarnings,
+} from './markdown';
 
 describe('markdown utils', () => {
   describe('markdownToJSON()', () => {
@@ -793,6 +799,497 @@ describe('markdown utils', () => {
         // Should still convert to markdown using GFM plugin
         expect(markdown).toContain('| Header |');
         expect(markdown).toContain('| Cell |');
+      });
+    });
+  });
+
+  describe('convertTipTapTableToMarkdown()', () => {
+    // Helper function to create a table element from HTML string
+    const createTableElement = (html: string): HTMLTableElement => {
+      const div = document.createElement('div');
+      div.innerHTML = html;
+      return div.querySelector('table') as HTMLTableElement;
+    };
+
+    beforeEach(() => {
+      // Reset warning deduplication before each test
+      resetTableWarnings();
+    });
+
+    describe('basic conversion', () => {
+      it('should convert simple table to GFM markdown', () => {
+        const html = `<table>
+          <tr>
+            <th><p>Header 1</p></th>
+            <th><p>Header 2</p></th>
+          </tr>
+          <tr>
+            <td><p>Cell 1</p></td>
+            <td><p>Cell 2</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.markdown).toContain('| Header 1 | Header 2 |');
+        expect(result.markdown).toContain('| --- | --- |');
+        expect(result.markdown).toContain('| Cell 1 | Cell 2 |');
+        expect(result.hasComplexCells).toBe(false);
+        expect(result.warnings).toHaveLength(0);
+      });
+
+      it('should handle empty cells', () => {
+        const html = `<table>
+          <tr>
+            <th><p>Header</p></th>
+            <th><p></p></th>
+          </tr>
+          <tr>
+            <td><p>Data</p></td>
+            <td><p></p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.markdown).toContain('| Header |  |');
+        expect(result.markdown).toContain('| Data |  |');
+      });
+
+      it('should join multiple paragraphs with spaces', () => {
+        const html = `<table>
+          <tr>
+            <th><p>Header</p></th>
+          </tr>
+          <tr>
+            <td><p>Line 1</p><p>Line 2</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.markdown).toContain('| Line 1 Line 2 |');
+      });
+
+      it('should return empty string for empty table', () => {
+        const html = `<table></table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.markdown).toBe('');
+        expect(result.hasComplexCells).toBe(false);
+        expect(result.warnings).toHaveLength(0);
+      });
+
+      it('should handle tables with only data rows (no th)', () => {
+        const html = `<table>
+          <tr>
+            <td><p>Row 1 Col 1</p></td>
+            <td><p>Row 1 Col 2</p></td>
+          </tr>
+          <tr>
+            <td><p>Row 2 Col 1</p></td>
+            <td><p>Row 2 Col 2</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        // GFM treats first row as header regardless
+        expect(result.markdown).toContain('| Row 1 Col 1 | Row 1 Col 2 |');
+        expect(result.markdown).toContain('| Row 2 Col 1 | Row 2 Col 2 |');
+      });
+    });
+
+    describe('complex cells detection', () => {
+      it('should detect colspan and set hasComplexCells', () => {
+        const html = `<table>
+          <tr>
+            <th colspan="2"><p>Merged Header</p></th>
+          </tr>
+          <tr>
+            <td><p>Cell 1</p></td>
+            <td><p>Cell 2</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.hasComplexCells).toBe(true);
+        expect(result.warnings).toHaveLength(1);
+        expect(result.warnings[0]).toContain('merged cells');
+        expect(result.warnings[0]).toContain('Merged Header');
+      });
+
+      it('should detect rowspan and set hasComplexCells', () => {
+        const html = `<table>
+          <tr>
+            <th><p>Header 1</p></th>
+            <th rowspan="2"><p>Merged Cell</p></th>
+          </tr>
+          <tr>
+            <td><p>Cell 1</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.hasComplexCells).toBe(true);
+        expect(result.warnings).toHaveLength(1);
+      });
+
+      it('should detect both colspan and rowspan', () => {
+        const html = `<table>
+          <tr>
+            <th colspan="2" rowspan="2"><p>Complex Cell</p></th>
+          </tr>
+          <tr>
+            <td><p>Cell</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.hasComplexCells).toBe(true);
+      });
+
+      it('should not flag colspan="1" or rowspan="1" as complex', () => {
+        const html = `<table>
+          <tr>
+            <th colspan="1" rowspan="1"><p>Normal Cell</p></th>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.hasComplexCells).toBe(false);
+        expect(result.warnings).toHaveLength(0);
+      });
+    });
+
+    describe('warning generation', () => {
+      it('should include table identifier in warning', () => {
+        const html = `<table>
+          <tr>
+            <th colspan="2"><p>Products Overview Table</p></th>
+          </tr>
+          <tr>
+            <td><p>A</p></td>
+            <td><p>B</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.warnings[0]).toContain('starting with "Products Overview Table"');
+      });
+
+      it('should truncate long table identifiers', () => {
+        const html = `<table>
+          <tr>
+            <th colspan="2"><p>This is a very long table header that should be truncated in the warning message</p></th>
+          </tr>
+          <tr>
+            <td><p>A</p></td>
+            <td><p>B</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.warnings[0]).toContain('...');
+        expect(result.warnings[0]).toContain('starting with');
+      });
+
+      it('should provide actionable warning message', () => {
+        const html = `<table>
+          <tr>
+            <th colspan="2"><p>Header</p></th>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.warnings[0]).toContain('WYSIWYG mode');
+        expect(result.warnings[0]).toContain('complex structures');
+      });
+
+      it('should handle empty first cell gracefully', () => {
+        const html = `<table>
+          <tr>
+            <th colspan="2"><p></p></th>
+          </tr>
+          <tr>
+            <td><p>A</p></td>
+            <td><p>B</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.warnings[0]).toContain('at this location');
+      });
+
+      it('should handle table identifier exactly 30 characters', () => {
+        const html = `<table>
+          <tr>
+            <th colspan="2"><p>This is exactly 30 chars text</p></th>
+          </tr>
+          <tr>
+            <td><p>A</p></td>
+            <td><p>B</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.warnings[0]).toContain('starting with "This is exactly 30 chars text"');
+        expect(result.warnings[0]).not.toContain('...');
+      });
+
+      it('should truncate table identifier at 31 characters', () => {
+        const html = `<table>
+          <tr>
+            <th colspan="2"><p>This is exactly 31 chars text!</p></th>
+          </tr>
+          <tr>
+            <td><p>A</p></td>
+            <td><p>B</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.warnings[0]).toContain('starting with "This is exactly 31 chars text');
+        expect(result.warnings[0]).toContain('...');
+      });
+    });
+
+    describe('text extraction', () => {
+      it('should strip nested HTML formatting (known limitation)', () => {
+        const html = `<table>
+          <tr>
+            <th><p><strong>Bold</strong> <em>Italic</em> <code>Code</code></p></th>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        // textContent extraction strips formatting
+        expect(result.markdown).toContain('| Bold Italic Code |');
+        expect(result.markdown).not.toContain('**Bold**');
+        expect(result.markdown).not.toContain('*Italic*');
+        expect(result.markdown).not.toContain('`Code`');
+      });
+
+      it('should handle cells without p tags', () => {
+        const html = `<table>
+          <tr>
+            <th>Direct text</th>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.markdown).toContain('| Direct text |');
+      });
+
+      it('should trim whitespace from cells', () => {
+        const html = `<table>
+          <tr>
+            <th><p>  Header  </p></th>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.markdown).toContain('| Header |');
+        expect(result.markdown).not.toContain('|  Header  |');
+      });
+    });
+
+    describe('markdown formatting', () => {
+      it('should add blank lines around table', () => {
+        const html = `<table>
+          <tr><th><p>H</p></th></tr>
+          <tr><td><p>D</p></td></tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.markdown).toMatch(/^\n\n/);
+        expect(result.markdown).toMatch(/\n\n$/);
+      });
+
+      it('should add separator after first row', () => {
+        const html = `<table>
+          <tr>
+            <th><p>Col1</p></th>
+            <th><p>Col2</p></th>
+            <th><p>Col3</p></th>
+          </tr>
+          <tr>
+            <td><p>A</p></td>
+            <td><p>B</p></td>
+            <td><p>C</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.markdown).toContain('| --- | --- | --- |');
+      });
+
+      it('should format all rows consistently', () => {
+        const html = `<table>
+          <tr><th><p>H1</p></th><th><p>H2</p></th></tr>
+          <tr><td><p>D1</p></td><td><p>D2</p></td></tr>
+          <tr><td><p>D3</p></td><td><p>D4</p></td></tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        const lines = result.markdown.trim().split('\n');
+        // Should have: header, separator, 2 data rows
+        expect(lines.length).toBe(4);
+        expect(lines[0]).toMatch(/^\| .* \|$/);
+        expect(lines[1]).toMatch(/^\| --- \| --- \|$/);
+        expect(lines[2]).toMatch(/^\| .* \|$/);
+        expect(lines[3]).toMatch(/^\| .* \|$/);
+      });
+    });
+
+    describe('edge cases', () => {
+      it('should handle table with no rows', () => {
+        const html = `<table><tbody></tbody></table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.markdown).toBe('');
+        expect(result.hasComplexCells).toBe(false);
+      });
+
+      it('should skip rows with no cells', () => {
+        const html = `<table>
+          <tr></tr>
+          <tr><th><p>Header</p></th></tr>
+          <tr><td><p>Data</p></td></tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        // Empty row should be skipped
+        const lines = result.markdown.trim().split('\n');
+        expect(lines.length).toBe(3); // header, separator, data
+      });
+
+      it('should handle mixed th and td in same row', () => {
+        const html = `<table>
+          <tr>
+            <th><p>Header</p></th>
+            <td><p>Data</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.markdown).toContain('| Header | Data |');
+      });
+    });
+
+    describe('integration with createTurndownService', () => {
+      beforeEach(() => {
+        resetTableWarnings();
+      });
+
+      it('should use extracted function in turndown rule', () => {
+        const turndown = createTurndownService();
+        const html = `<table>
+          <tr>
+            <th><p>Header 1</p></th>
+            <th><p>Header 2</p></th>
+          </tr>
+          <tr>
+            <td><p>Cell 1</p></td>
+            <td><p>Cell 2</p></td>
+          </tr>
+        </table>`;
+
+        const markdown = turndown.turndown(html);
+
+        expect(markdown).toContain('| Header 1 | Header 2 |');
+        expect(markdown).toContain('| --- | --- |');
+        expect(markdown).toContain('| Cell 1 | Cell 2 |');
+      });
+
+      it('should deduplicate warnings when converting multiple tables', () => {
+        const turndown = createTurndownService();
+        const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        // Convert first table with colspan
+        const html1 = `<table><tr><th colspan="2"><p>Table 1</p></th></tr></table>`;
+        turndown.turndown(html1);
+
+        // Convert second table with colspan (same warning type)
+        const html2 = `<table><tr><th colspan="2"><p>Table 2</p></th></tr></table>`;
+        turndown.turndown(html2);
+
+        // Convert third table with colspan (same warning type)
+        const html3 = `<table><tr><th colspan="2"><p>Table 3</p></th></tr></table>`;
+        turndown.turndown(html3);
+
+        // Warning should only be shown once
+        expect(consoleSpy).toHaveBeenCalledTimes(1);
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringContaining('merged cells')
+        );
+
+        consoleSpy.mockRestore();
+      });
+
+      it('should reset warnings when resetTableWarnings is called', () => {
+        const turndown = createTurndownService();
+        const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        // Convert table with colspan
+        const html = `<table><tr><th colspan="2"><p>Table 1</p></th></tr></table>`;
+        turndown.turndown(html);
+
+        expect(consoleSpy).toHaveBeenCalledTimes(1);
+
+        // Reset warnings
+        resetTableWarnings();
+
+        // Convert another table - should warn again
+        turndown.turndown(html);
+
+        expect(consoleSpy).toHaveBeenCalledTimes(2);
+
+        consoleSpy.mockRestore();
       });
     });
   });
