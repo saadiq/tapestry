@@ -31,6 +31,133 @@ export const createMarkdownParser = (): MarkdownIt => {
 };
 
 /**
+ * Result of table conversion with warnings
+ */
+interface TableConversionResult {
+  markdown: string;
+  hasComplexCells: boolean;
+  warnings: string[];
+}
+
+/**
+ * Module-level set to track which warnings have been shown
+ * Used for deduplication to prevent console spam
+ */
+const shownWarnings = new Set<string>();
+
+/**
+ * Reset warning deduplication state
+ * Useful for tests or when starting a new conversion session
+ */
+export const resetTableWarnings = (): void => {
+  shownWarnings.clear();
+};
+
+/**
+ * Convert a TipTap table HTML element to GFM markdown
+ *
+ * This function handles TipTap's table structure where cell content is wrapped in <p> tags.
+ * It extracts text content from cells, detects complex features (colspan/rowspan), and
+ * generates GFM-compliant markdown table syntax.
+ *
+ * @param element - The HTML table element to convert
+ * @returns Object containing markdown string, complexity flags, and warnings
+ *
+ * @example
+ * ```typescript
+ * const table = document.querySelector('table');
+ * const result = convertTipTapTableToMarkdown(table);
+ * console.log(result.markdown);
+ * if (result.hasComplexCells) {
+ *   console.warn(result.warnings.join('\n'));
+ * }
+ * ```
+ *
+ * Limitations:
+ * - Uses textContent extraction, which strips nested formatting (bold, italic, links, code)
+ * - Merged cells (colspan/rowspan) are not supported in GFM and will be flattened
+ * - Multiple paragraphs in a cell are joined with spaces
+ */
+export const convertTipTapTableToMarkdown = (element: HTMLTableElement): TableConversionResult => {
+  const rows: string[][] = [];
+  let hasHeader = false;
+  let hasComplexCells = false;
+  const warnings: string[] = [];
+
+  // Process each row
+  const tableRows = Array.from(element.querySelectorAll('tr'));
+
+  tableRows.forEach((row, rowIndex) => {
+    const cells: string[] = [];
+    const cellElements = Array.from(row.querySelectorAll('th, td'));
+
+    cellElements.forEach((cell) => {
+      // Check for colspan/rowspan (not supported in GFM)
+      const colspan = parseInt(cell.getAttribute('colspan') || '1', 10);
+      const rowspan = parseInt(cell.getAttribute('rowspan') || '1', 10);
+      if (colspan > 1 || rowspan > 1) {
+        hasComplexCells = true;
+      }
+
+      // Extract text from paragraph tags or direct text content
+      const paragraphs = cell.querySelectorAll('p');
+      let cellText = '';
+      if (paragraphs.length > 0) {
+        cellText = Array.from(paragraphs).map(p => p.textContent || '').join(' ');
+      } else {
+        cellText = cell.textContent || '';
+      }
+      cells.push(cellText.trim());
+    });
+
+    if (cellElements.length > 0 && cellElements[0].tagName === 'TH') {
+      hasHeader = true;
+    }
+
+    if (cells.length > 0) {
+      rows.push(cells);
+    }
+  });
+
+  if (rows.length === 0) {
+    return { markdown: '', hasComplexCells: false, warnings: [] };
+  }
+
+  // Generate warnings
+  if (hasComplexCells) {
+    // Try to identify the table for better UX
+    const firstCellText = rows[0]?.[0]?.substring(0, 30) || '';
+    const tableIdentifier = firstCellText.trim().length > 0
+      ? `starting with "${firstCellText}${firstCellText.length >= 30 ? '...' : ''}"`
+      : 'at this location';
+
+    warnings.push(
+      `Table ${tableIdentifier} contains merged cells (colspan/rowspan) which are not supported in GFM markdown. ` +
+      `Cell merging will be lost in conversion. Consider keeping this table in WYSIWYG mode for complex structures.`
+    );
+  }
+
+  // Build markdown table
+  let markdown = '';
+
+  rows.forEach((row, rowIndex) => {
+    markdown += '| ' + row.join(' | ') + ' |\n';
+
+    // Add separator after first row (GFM treats first row as header)
+    if (rowIndex === 0) {
+      const separator = row.map(() => '---').join(' | ');
+      markdown += '| ' + separator + ' |\n';
+    }
+  });
+
+  return {
+    markdown: '\n\n' + markdown + '\n\n',
+    hasComplexCells,
+    warnings,
+  };
+};
+
+/**
  * Create a configured TurndownService instance for HTML to markdown conversion
  * Configuration:
  * - headingStyle: 'atx' - Uses # syntax for headings (e.g., ## Heading)
@@ -70,68 +197,21 @@ export const createTurndownService = (): TurndownService => {
     },
     replacement: (content, node) => {
       const element = node as HTMLTableElement;
-      const rows: string[][] = [];
-      let hasHeader = false;
+      const { markdown, hasComplexCells, warnings } = convertTipTapTableToMarkdown(element);
 
-      // Process each row
-      const tableRows = Array.from(element.querySelectorAll('tr'));
-      let hasComplexCells = false;
-
-      tableRows.forEach((row, rowIndex) => {
-        const cells: string[] = [];
-        const cellElements = Array.from(row.querySelectorAll('th, td'));
-
-        cellElements.forEach((cell) => {
-          // Check for colspan/rowspan (not supported in GFM)
-          const colspan = parseInt(cell.getAttribute('colspan') || '1', 10);
-          const rowspan = parseInt(cell.getAttribute('rowspan') || '1', 10);
-          if (colspan > 1 || rowspan > 1) {
-            hasComplexCells = true;
+      // Display warnings using deduplication to prevent console spam
+      if (hasComplexCells && warnings.length > 0) {
+        warnings.forEach(warning => {
+          // Only show each unique warning type once per session
+          const warningKey = warning.includes('merged cells') ? 'merged-cells' : warning;
+          if (!shownWarnings.has(warningKey)) {
+            console.warn(warning);
+            shownWarnings.add(warningKey);
           }
-
-          // Extract text from paragraph tags or direct text content
-          const paragraphs = cell.querySelectorAll('p');
-          let cellText = '';
-          if (paragraphs.length > 0) {
-            cellText = Array.from(paragraphs).map(p => p.textContent || '').join(' ');
-          } else {
-            cellText = cell.textContent || '';
-          }
-          cells.push(cellText.trim());
         });
-
-        if (cellElements.length > 0 && cellElements[0].tagName === 'TH') {
-          hasHeader = true;
-        }
-
-        if (cells.length > 0) {
-          rows.push(cells);
-        }
-      });
-
-      if (rows.length === 0) {
-        return '';
       }
 
-      // Warn if table contains merged cells (not supported in GFM)
-      if (hasComplexCells) {
-        console.warn('Table contains merged cells (colspan/rowspan) which are not supported in GFM markdown. Cell merging will be lost in conversion.');
-      }
-
-      // Build markdown table
-      let markdown = '';
-
-      rows.forEach((row, rowIndex) => {
-        markdown += '| ' + row.join(' | ') + ' |\n';
-
-        // Add separator after first row (GFM treats first row as header)
-        if (rowIndex === 0) {
-          const separator = row.map(() => '---').join(' | ');
-          markdown += '| ' + separator + ' |\n';
-        }
-      });
-
-      return '\n\n' + markdown + '\n\n';
+      return markdown;
     }
   });
 
