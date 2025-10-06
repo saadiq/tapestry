@@ -3,7 +3,7 @@
  */
 
 import './index.css';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { MainLayout } from './components/Layout/MainLayout';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { FileTreeProvider, useFileTreeContext } from './store/fileTreeStore';
@@ -66,9 +66,9 @@ function stopSaveTrackingCleanup(): void {
 function trackSaveStart(filePath: string): void {
   const normalizedPath = normalizePath(filePath);
 
-  // Only perform eager cleanup if map is getting large (>50 entries)
+  // Only perform eager cleanup if map is getting large
   // This optimizes performance for normal usage while preventing memory leaks
-  if (activeSaves.size > 50) {
+  if (activeSaves.size > TIMING_CONFIG.SAVE_TRACKING_CLEANUP_THRESHOLD) {
     const now = Date.now();
     const maxAge = 5000; // 5 seconds
     for (const [path, timestamp] of activeSaves.entries()) {
@@ -334,24 +334,29 @@ function AppContent() {
     };
   }, []); // Empty deps - register once, use refs for values
 
+  // Clear blur timeout when file is closed to prevent stale saves
+  useEffect(() => {
+    if (!fileContent.filePath && blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+  }, [fileContent.filePath]);
+
   // Refs for file watcher to avoid excessive re-registration
   // Must be declared AFTER fileContent is initialized
   const activePathRef = useRef(activePath);
   activePathRef.current = activePath;
 
-  // Cache normalized active path to avoid repeated normalization
-  const normalizedActivePathRef = useRef<string | null>(null);
+  // Compute normalized active path synchronously to avoid race conditions
+  const normalizedActivePath = useMemo(() => {
+    return activePath ? normalizePath(activePath) : null;
+  }, [activePath]);
 
   const fileContentRef = useRef(fileContent);
   fileContentRef.current = fileContent;
 
   const toastRef = useRef(toast);
   toastRef.current = toast;
-
-  // Update normalized path when active path changes
-  useEffect(() => {
-    normalizedActivePathRef.current = activePath ? normalizePath(activePath) : null;
-  }, [activePath]);
 
   // Refs for menu handlers to prevent listener re-registration
   const handlersRef = useRef({
@@ -385,9 +390,7 @@ function AppContent() {
         const currentToast = toastRef.current;
 
         // Normalize event path for cross-platform comparison (Windows vs Unix)
-        // Use cached normalized active path to avoid repeated normalization
         const normalizedEventPath = event?.path ? normalizePath(event.path) : null;
-        const normalizedActivePath = normalizedActivePathRef.current;
 
         // If active file was modified externally
         if (normalizedEventPath && normalizedActivePath && normalizedEventPath === normalizedActivePath) {
@@ -429,7 +432,7 @@ function AppContent() {
         window.electronAPI.fileSystem.removeFileChangeListener(handleFileChange);
       }
     };
-  }, [rootPath, loadDirectory]);
+  }, [rootPath, loadDirectory, normalizedActivePath]);
 
   // Listen for menu events from main process - uses refs to prevent memory leak
   useEffect(() => {

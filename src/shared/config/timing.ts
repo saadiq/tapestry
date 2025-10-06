@@ -49,6 +49,14 @@ export const TIMING_CONFIG = {
   LARGE_FILE_WARNING_THRESHOLD_BYTES: 5_242_880,
 
   /**
+   * Save tracking cleanup threshold
+   * When the activeSaves Map exceeds this size, eager cleanup of stale entries is triggered
+   * This prevents memory leaks during rapid file switching (e.g., opening >50 files in <5s)
+   * @default 50 entries
+   */
+  SAVE_TRACKING_CLEANUP_THRESHOLD: 50,
+
+  /**
    * Toast display durations by type
    */
   TOAST_DURATION: {

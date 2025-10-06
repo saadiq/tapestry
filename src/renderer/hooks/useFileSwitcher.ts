@@ -57,6 +57,9 @@ export function useFileSwitcher({
 
   // Load file when activePath changes (with save-before-switch)
   useEffect(() => {
+    // Capture activePath at effect start to prevent race conditions
+    const currentActivePath = activePath;
+
     const loadFileWithSave = async () => {
       // Prevent concurrent file switches using ref for synchronous check
       if (isSwitchingFileRef.current) {
@@ -65,7 +68,7 @@ export function useFileSwitcher({
       }
 
       // Clean up previous path ref when no file is open
-      if (!activePath) {
+      if (!currentActivePath) {
         previousPathRef.current = null;
         return;
       }
@@ -76,7 +79,7 @@ export function useFileSwitcher({
       // Save previous file if it was dirty
       if (
         previousPathRef.current &&
-        previousPathRef.current !== activePath &&
+        previousPathRef.current !== currentActivePath &&
         fileContent.isDirty
       ) {
         setIsLoadingFile(true);
@@ -118,7 +121,7 @@ export function useFileSwitcher({
           isSwitchingFileRef.current = false;
 
           // Revert the file selection in tree to keep user on the file with unsaved changes
-          if (previousPathRef.current !== activePath) {
+          if (previousPathRef.current !== currentActivePath) {
             setActiveFile(previousPathRef.current);
           }
           return;
@@ -132,7 +135,7 @@ export function useFileSwitcher({
       setIsLoadingFile(true);
       try {
         // Check file size before loading to warn about large files
-        const fileNode = nodes.find((node) => node.path === activePath);
+        const fileNode = nodes.find((node) => node.path === currentActivePath);
         if (
           fileNode?.size &&
           fileNode.size > TIMING_CONFIG.LARGE_FILE_WARNING_THRESHOLD_BYTES
@@ -143,8 +146,8 @@ export function useFileSwitcher({
           );
         }
 
-        await fileContent.loadFile(activePath);
-        previousPathRef.current = activePath;
+        await fileContent.loadFile(currentActivePath);
+        previousPathRef.current = currentActivePath;
       } catch (error) {
         console.error('Failed to load file:', error);
         showToast.showError(
@@ -158,9 +161,9 @@ export function useFileSwitcher({
 
     // Only trigger load when activePath changes and differs from current file
     if (
-      activePath &&
-      activePath !== fileContent.filePath &&
-      activePath !== previousPathRef.current
+      currentActivePath &&
+      currentActivePath !== fileContent.filePath &&
+      currentActivePath !== previousPathRef.current
     ) {
       loadFileWithSave();
     }

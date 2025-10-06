@@ -143,9 +143,9 @@ export function useFileContent(
 
     setState((prev) => ({ ...prev, saving: true, error: null }));
 
+    // Race the save operation against a timeout to prevent eternal hangs
+    let timeoutId: NodeJS.Timeout | undefined;
     try {
-      // Race the save operation against a timeout to prevent eternal hangs
-      let timeoutId: NodeJS.Timeout | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutId = setTimeout(() => {
           reject(new Error(`Save operation timed out after ${saveTimeout}ms`));
@@ -156,11 +156,6 @@ export function useFileContent(
         fileSystemService.writeFile(filePath, state.content),
         timeoutPromise
       ]);
-
-      // Clear timeout to prevent memory leak
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
 
       if (result.success) {
         setState((prev) => ({
@@ -190,6 +185,11 @@ export function useFileContent(
       }));
       onAfterSave?.(false);
       return false;
+    } finally {
+      // Guarantee timeout cleanup in all cases (success, failure, or timeout)
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     }
   }, [state.filePath, state.content, state.isDirty, onBeforeSave, onAfterSave, saveTimeout]);
 
@@ -224,9 +224,9 @@ export function useFileContent(
 
     setState((prev) => ({ ...prev, saving: true, error: null }));
 
+    // Race the save operation against a timeout
+    let timeoutId: NodeJS.Timeout | undefined;
     try {
-      // Race the save operation against a timeout
-      let timeoutId: NodeJS.Timeout | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutId = setTimeout(() => {
           reject(new Error(`Save operation timed out after ${saveTimeout}ms`));
@@ -237,11 +237,6 @@ export function useFileContent(
         fileSystemService.writeFile(filePath, state.content),
         timeoutPromise
       ]);
-
-      // Clear timeout to prevent memory leak
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
 
       if (result.success) {
         setState((prev) => ({
@@ -282,6 +277,11 @@ export function useFileContent(
         error: errorMessage, // Return base error message for retry logic
         filePath
       };
+    } finally {
+      // Guarantee timeout cleanup in all cases (success, failure, or timeout)
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     }
   }, [state.filePath, state.content, state.isDirty, clearAutoSaveTimer,
       onBeforeSave, onAfterSave, saveTimeout]);
