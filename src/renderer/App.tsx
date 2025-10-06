@@ -266,21 +266,22 @@ function AppContent() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [fileContent.isDirty]);
 
-  // Ref to track blur save timeouts to prevent memory leaks
-  const blurTimeoutsRef = useRef<NodeJS.Timeout[]>([]);
+  // Ref to track blur save timeout to prevent memory leaks
+  const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Auto-save on window blur - uses refs to avoid re-registration
   useEffect(() => {
     const handleWindowBlur = () => {
       // Debounce rapid blur events (e.g., quick app switching)
-      // Clear all pending timeouts before creating a new one
-      blurTimeoutsRef.current.forEach(clearTimeout);
-      blurTimeoutsRef.current = [];
+      // Clear any pending timeout before creating a new one
+      if (blurTimeoutRef.current) {
+        clearTimeout(blurTimeoutRef.current);
+      }
 
       // Capture file path at blur time to prevent stale closure issues
       const capturedFilePath = fileContentRef.current.filePath;
 
-      const timeout = setTimeout(async () => {
+      blurTimeoutRef.current = setTimeout(async () => {
         // Use refs to get latest values
         const currentFileContent = fileContentRef.current;
         const currentToast = toastRef.current;
@@ -321,16 +322,15 @@ function AppContent() {
           }
         }
       }, TIMING_CONFIG.BLUR_SAVE_DEBOUNCE_MS);
-
-      blurTimeoutsRef.current.push(timeout);
     };
 
     window.addEventListener('blur', handleWindowBlur);
 
     return () => {
       window.removeEventListener('blur', handleWindowBlur);
-      blurTimeoutsRef.current.forEach(clearTimeout);
-      blurTimeoutsRef.current = [];
+      if (blurTimeoutRef.current) {
+        clearTimeout(blurTimeoutRef.current);
+      }
     };
   }, []); // Empty deps - register once, use refs for values
 
