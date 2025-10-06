@@ -17,6 +17,12 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useFileContent } from './hooks/useFileContent';
 import { fileSystemService } from './services/fileSystemService';
 import type { FileWatcherEvent } from '../shared/types/fileSystem';
+import { normalizePath, getDirectoryPath, isPathWithinDirectory } from './utils/pathUtils';
+
+// Constants for auto-save and file operations
+const FILE_WATCHER_DEBOUNCE_MS = 500; // Delay after save before re-enabling file watcher
+const LARGE_FILE_TOAST_THRESHOLD_BYTES = 10240; // 10KB - show "saving..." toast for larger files
+const BLUR_SAVE_DEBOUNCE_MS = 100; // Debounce window blur events to prevent rapid-fire saves
 
 // Inner component that has access to FileTreeContext and Toast
 function AppContent() {
@@ -49,7 +55,7 @@ function AppContent() {
     // Reset saving flag after a short delay to ignore file watcher events from our own save
     setTimeout(() => {
       isSavingRef.current = false;
-    }, 500);
+    }, FILE_WATCHER_DEBOUNCE_MS);
   }, []);
 
   const fileContent = useFileContent({
@@ -73,7 +79,7 @@ function AppContent() {
 
         // Show toast for larger files that might take time to save
         const approxSizeInBytes = fileContent.content.length * 2;
-        const shouldShowToast = approxSizeInBytes > 10240; // 10KB threshold
+        const shouldShowToast = approxSizeInBytes > LARGE_FILE_TOAST_THRESHOLD_BYTES;
         if (shouldShowToast) {
           toast.showInfo('Saving previous file...');
         }
@@ -163,22 +169,16 @@ function AppContent() {
 
   const ensureDirectoryContext = useCallback(
     async (filePath: string) => {
-      const normalizedPath = filePath.replace(/\\/g, '/');
-      const trimmedPath = normalizedPath.replace(/\/+$/, '');
-      const lastSlashIndex = trimmedPath.lastIndexOf('/');
+      const directoryPath = getDirectoryPath(filePath);
 
-      if (lastSlashIndex <= 0) {
+      if (!directoryPath) {
         return;
       }
 
-      let directoryPath = trimmedPath.slice(0, lastSlashIndex);
-      if (/^[A-Za-z]:$/.test(directoryPath)) {
-        directoryPath = `${directoryPath}/`;
-      }
-
-      const normalizedRoot = rootPath ? rootPath.replace(/\\/g, '/') : null;
+      const normalizedFilePath = normalizePath(filePath);
+      const normalizedRoot = rootPath ? normalizePath(rootPath) : null;
       const shouldReloadTree =
-        !normalizedRoot || !trimmedPath.startsWith(normalizedRoot);
+        !normalizedRoot || !isPathWithinDirectory(normalizedFilePath, normalizedRoot);
 
       if (shouldReloadTree) {
         if (rootPath) {
@@ -256,7 +256,6 @@ function AppContent() {
   // Auto-save on window blur
   useEffect(() => {
     let blurSaveTimeout: NodeJS.Timeout | null = null;
-    const BLUR_SAVE_DEBOUNCE_MS = 100;
 
     const handleWindowBlur = () => {
       // Debounce rapid blur events (e.g., quick app switching)

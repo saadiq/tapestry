@@ -88,56 +88,18 @@ describe('App - Auto-save Integration Tests', () => {
     vi.restoreAllMocks();
   });
 
-  describe('Save-Before-Switch Behavior', () => {
-    it('should save dirty file when switching to another file', async () => {
-      // This test would require full FileTreeProvider integration
-      // For now, we'll test the hook behavior in isolation
-      // A full integration test would need to mock the entire file tree
-      expect(true).toBe(true);
-    });
-
-    it('should block file switch when save fails', async () => {
-      // Mock save failure
-      vi.mocked(fileSystemService.fileSystemService.writeFile).mockResolvedValue({
-        success: false,
-        error: 'Permission denied',
-      });
-
-      // Full test requires FileTreeProvider mock
-      expect(true).toBe(true);
-    });
-  });
+  // TODO: Save-Before-Switch integration tests
+  // These tests require full FileTreeProvider integration which is complex due to
+  // nested provider structure. Core save logic is tested in useFileContent.test.ts.
+  // Future improvements:
+  // - Mock FileTreeProvider with setActiveFile simulation
+  // - Test blocking behavior when save fails
+  // - Test successful file switching with auto-save
 
   describe('Window Blur Auto-save', () => {
-    it('should save dirty file when window loses focus', async () => {
-      const { container } = render(<App />);
-
-      // Wait for initial render
-      await waitFor(() => {
-        expect(screen.getByText(/Open a folder/i)).toBeInTheDocument();
-      });
-
-      // Note: Full test requires simulating file load and modification
-      // This is a placeholder for the test structure
-      expect(container).toBeTruthy();
-    });
-
-    it('should show warning toast when blur save fails', async () => {
-      // Mock save failure
-      vi.mocked(fileSystemService.fileSystemService.writeFile).mockResolvedValue({
-        success: false,
-        error: 'Disk full',
-      });
-
-      const { container } = render(<App />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Open a folder/i)).toBeInTheDocument();
-      });
-
-      // Test structure placeholder
-      expect(container).toBeTruthy();
-    });
+    // TODO: Full integration tests for window blur auto-save
+    // These require FileTreeProvider mock to load files and modify content.
+    // Current tests verify basic event handling without file context.
 
     it('should not save on blur if file is clean', async () => {
       const mockWrite = vi.fn().mockResolvedValue({ success: true });
@@ -195,40 +157,12 @@ describe('App - Auto-save Integration Tests', () => {
     });
   });
 
-  describe('File Watcher with Dirty Files', () => {
-    it('should show warning when dirty file modified externally', async () => {
-      const { container } = render(<App />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Open a folder/i)).toBeInTheDocument();
-      });
-
-      // Test structure - requires file tree integration
-      expect(container).toBeTruthy();
-    });
-
-    it('should reload clean file when modified externally', async () => {
-      const { container } = render(<App />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Open a folder/i)).toBeInTheDocument();
-      });
-
-      // Test structure placeholder
-      expect(container).toBeTruthy();
-    });
-
-    it('should skip file watcher events during save', async () => {
-      const { container } = render(<App />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Open a folder/i)).toBeInTheDocument();
-      });
-
-      // Test structure placeholder
-      expect(container).toBeTruthy();
-    });
-  });
+  // TODO: File Watcher integration tests
+  // These tests require FileTreeProvider mock and file watcher event simulation.
+  // Future improvements:
+  // - Test warning toast when dirty file is modified externally
+  // - Test file reload when clean file is modified externally
+  // - Test that file watcher events are skipped during saves (isSavingRef)
 
   describe('Beforeunload Warning', () => {
     it('should warn before closing with unsaved changes', async () => {
@@ -266,43 +200,12 @@ describe('App - Auto-save Integration Tests', () => {
     });
   });
 
-  describe('Error Recovery', () => {
-    it('should allow retry after failed save', async () => {
-      // First save fails
-      vi.mocked(fileSystemService.fileSystemService.writeFile)
-        .mockResolvedValueOnce({
-          success: false,
-          error: 'Permission denied',
-        })
-        // Second save succeeds
-        .mockResolvedValueOnce({
-          success: true,
-        });
-
-      const { container } = render(<App />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Open a folder/i)).toBeInTheDocument();
-      });
-
-      expect(container).toBeTruthy();
-    });
-
-    it('should maintain dirty state after failed save', async () => {
-      vi.mocked(fileSystemService.fileSystemService.writeFile).mockResolvedValue({
-        success: false,
-        error: 'Network error',
-      });
-
-      const { container } = render(<App />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Open a folder/i)).toBeInTheDocument();
-      });
-
-      expect(container).toBeTruthy();
-    });
-  });
+  // TODO: Error Recovery integration tests
+  // These tests require FileTreeProvider mock to simulate save failures and retries.
+  // Future improvements:
+  // - Test retry after failed save
+  // - Test dirty state persistence after failed save
+  // - Verify error toast messages
 
   describe('Edge Cases', () => {
     it('should handle save during unmount gracefully', async () => {
@@ -321,80 +224,19 @@ describe('App - Auto-save Integration Tests', () => {
       expect(true).toBe(true);
     });
 
-    it('should handle rapid file switching', async () => {
-      const { container } = render(<App />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Open a folder/i)).toBeInTheDocument();
-      });
-
-      // Test structure placeholder
-      expect(container).toBeTruthy();
-    });
-
-    it('should handle save during file watcher reload', async () => {
-      const { container } = render(<App />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Open a folder/i)).toBeInTheDocument();
-      });
-
-      // Test structure placeholder
-      expect(container).toBeTruthy();
-    });
+    // TODO: Rapid file switching and concurrent save tests
+    // These require FileTreeProvider mock to simulate multiple file selections.
+    // Future improvements:
+    // - Test rapid file switching with auto-save
+    // - Test save during file watcher reload (isSavingRef coordination)
   });
 
-  describe('Toast Notifications', () => {
-    it('should show "Saving previous file..." toast for large files', async () => {
-      // Mock large file content (>10KB)
-      const largeContent = 'x'.repeat(6000); // ~12KB in UTF-16
-
-      vi.mocked(fileSystemService.fileSystemService.readFile).mockResolvedValue({
-        content: largeContent,
-        metadata: {
-          size: largeContent.length,
-          modified: new Date(),
-          created: new Date(),
-          isDirectory: false,
-          permissions: 'rw-r--r--',
-        },
-      });
-
-      const { container } = render(<App />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Open a folder/i)).toBeInTheDocument();
-      });
-
-      // Test structure placeholder
-      expect(container).toBeTruthy();
-    });
-
-    it('should not show toast for small files', async () => {
-      // Mock small file content (<10KB)
-      const smallContent = 'small content';
-
-      vi.mocked(fileSystemService.fileSystemService.readFile).mockResolvedValue({
-        content: smallContent,
-        metadata: {
-          size: smallContent.length,
-          modified: new Date(),
-          created: new Date(),
-          isDirectory: false,
-          permissions: 'rw-r--r--',
-        },
-      });
-
-      const { container } = render(<App />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Open a folder/i)).toBeInTheDocument();
-      });
-
-      // Test structure placeholder
-      expect(container).toBeTruthy();
-    });
-  });
+  // TODO: Toast Notifications integration tests
+  // These tests require FileTreeProvider mock to simulate file switching with different file sizes.
+  // Future improvements:
+  // - Test "Saving previous file..." toast appears for large files (>10KB)
+  // - Test toast does not appear for small files
+  // - Test error/warning toasts for various failure scenarios
 });
 
 /**
