@@ -40,16 +40,6 @@ function AppContent() {
   // Previous path for save-before-switch
   const previousPathRef = useRef<string | null>(null);
 
-  // Refs for file watcher to avoid excessive re-registration
-  const activePathRef = useRef(activePath);
-  activePathRef.current = activePath;
-
-  const fileContentRef = useRef(fileContent);
-  fileContentRef.current = fileContent;
-
-  const toastRef = useRef(toast);
-  toastRef.current = toast;
-
   // Save lifecycle callbacks to track save state
   const handleBeforeSave = useCallback(() => {
     isSavingRef.current = true;
