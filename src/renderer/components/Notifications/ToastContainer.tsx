@@ -13,6 +13,7 @@ interface ToastContextValue {
   showSuccess: (message: string, duration?: number) => void;
   showError: (message: string, duration?: number) => void;
   showInfo: (message: string, duration?: number) => void;
+  showWarning: (message: string, duration?: number) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -49,12 +50,16 @@ export function ToastProvider({ children }: ToastProviderProps) {
     showToast(message, 'info', duration);
   }, [showToast]);
 
+  const showWarning = useCallback((message: string, duration = 4000) => {
+    showToast(message, 'warning', duration);
+  }, [showToast]);
+
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   }, []);
 
   return (
-    <ToastContext.Provider value={{ showToast, showSuccess, showError, showInfo }}>
+    <ToastContext.Provider value={{ showToast, showSuccess, showError, showInfo, showWarning }}>
       {children}
 
       {/* Toast Container */}

@@ -6,6 +6,12 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { fileSystemService } from '../services/fileSystemService';
 import type { FileContent } from '../../shared/types/fileSystem';
 
+interface SaveResult {
+  success: boolean;
+  error?: string;
+  filePath?: string;
+}
+
 interface UseFileContentState {
   filePath: string | null;
   content: string;
@@ -28,6 +34,7 @@ interface UseFileContentReturn extends UseFileContentState {
   // File operations
   loadFile: (filePath: string) => Promise<void>;
   saveFile: (pathOverride?: string) => Promise<boolean>;
+  saveFileSync: () => Promise<SaveResult>;
   updateContent: (newContent: string) => void;
   updateOriginalContent: (content: string) => void;
   closeFile: () => void;
@@ -173,6 +180,81 @@ export function useFileContent(
   }, [state.filePath, state.content, state.isDirty, onBeforeSave, onAfterSave]);
 
   /**
+   * Save file immediately without debounce
+   * Used when switching files to ensure data is persisted
+   */
+  const saveFileSync = useCallback(async (): Promise<SaveResult> => {
+    // Clear any pending auto-save timer
+    clearAutoSaveTimer();
+
+    const filePath = state.filePath;
+
+    if (!filePath) {
+      return {
+        success: false,
+        error: 'No file is currently open'
+      };
+    }
+
+    if (!state.isDirty) {
+      // No changes to save - this is success
+      return {
+        success: true,
+        filePath
+      };
+    }
+
+    // Call before save callback
+    onBeforeSave?.();
+
+    setState((prev) => ({ ...prev, saving: true, error: null }));
+
+    try {
+      const result = await fileSystemService.writeFile(filePath, state.content);
+
+      if (result.success) {
+        setState((prev) => ({
+          ...prev,
+          originalContent: prev.content,
+          isDirty: false,
+          saving: false,
+        }));
+        onAfterSave?.(true);
+        return {
+          success: true,
+          filePath
+        };
+      } else {
+        setState((prev) => ({
+          ...prev,
+          saving: false,
+          error: result.error || 'Failed to save file',
+        }));
+        onAfterSave?.(false);
+        return {
+          success: false,
+          error: result.error || 'Failed to save file',
+          filePath
+        };
+      }
+    } catch (error: any) {
+      const errorMessage = error.message || 'Failed to save file';
+      setState((prev) => ({
+        ...prev,
+        saving: false,
+        error: errorMessage,
+      }));
+      onAfterSave?.(false);
+      return {
+        success: false,
+        error: errorMessage,
+        filePath
+      };
+    }
+  }, [state.filePath, state.content, state.isDirty, clearAutoSaveTimer,
+      onBeforeSave, onAfterSave]);
+
+  /**
    * Update file content with cache-aware auto-save
    */
   const updateContent = useCallback(
@@ -260,6 +342,7 @@ export function useFileContent(
     ...state,
     loadFile,
     saveFile,
+    saveFileSync,
     updateContent,
     updateOriginalContent,
     closeFile,
