@@ -1,0 +1,82 @@
+# .github/workflows/release.yml
+name: Build and Release
+
+# Trigger on version tags
+on:
+  push:
+    tags:
+      - 'v*'  # Matches v0.0.1, v0.1.0, etc.
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest  # Use macOS runner for ARM Mac builds
+
+    steps:
+      # Checkout the code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Install Bun
+      - name: Install Bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> $GITHUB_PATH
+
+      # Install dependencies
+      - name: Install dependencies
+        run: bun install
+
+      # Build the app
+      - name: Build Electron app
+        run: bun run make
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Find the built artifacts
+      - name: List build artifacts
+        run: |
+          echo "Build artifacts:"
+          ls -la out/make/
+          ls -la out/make/zip/darwin/
+
+      # Find the ZIP file dynamically (handles version format differences)
+      - name: Find ZIP file
+        id: find_zip
+        run: |
+          ZIP_PATH=$(find out/make/zip/darwin/arm64 -name "*.zip" -type f | head -n 1)
+          echo "Found ZIP: $ZIP_PATH"
+          echo "ZIP_PATH=$ZIP_PATH" >> $GITHUB_OUTPUT
+
+      # Create Release
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+          body: |
+            ## What's Changed
+            Auto-generated release for ${{ github.ref }}
+
+            See commit history for changes.
+
+      # Upload the ZIP file
+      - name: Upload Mac ZIP
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{ steps.find_zip.outputs.ZIP_PATH }}
+          asset_name: Tapestry-mac-${{ github.ref_name }}.zip
+          asset_content_type: application/zip
