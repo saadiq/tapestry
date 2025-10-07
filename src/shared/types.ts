@@ -37,6 +37,30 @@ export interface IElectronAPI {
     onFileChange: (callback: (event: FileWatcherEvent) => void) => void;
     removeFileChangeListener: (callback: (event: FileWatcherEvent) => void) => void;
   };
+
+  // Update operations
+  checkForUpdates: () => Promise<{ success: boolean }>;
+  downloadUpdate: () => Promise<{ success: boolean }>;
+  quitAndInstall: () => Promise<{ success: boolean }>;
+  getAppVersion: () => Promise<string>;
+
+  // Update event handlers
+  onUpdateAvailable: (callback: (info: UpdateInfo) => void) => void;
+  onUpdateDownloaded: (callback: () => void) => void;
+  onUpdateStatus: (callback: (status: UpdateStatus) => void) => void;
+  removeUpdateListeners: () => void;
+}
+
+export interface UpdateInfo {
+  version: string;
+  releaseNotes?: string;
+  releaseName?: string;
+  releaseDate?: string;
+}
+
+export interface UpdateStatus {
+  status: string;
+  data?: any;
 }
 
 // Extend Window interface to include our API

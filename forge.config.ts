@@ -10,6 +10,9 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
+    name: 'Tapestry',
+    appBundleId: 'com.saadiq.tapestry',
+    appCategoryType: 'public.app-category.productivity',
   },
   rebuildConfig: {},
   makers: [

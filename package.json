@@ -1,9 +1,13 @@
 {
   "name": "tapestry",
   "productName": "tapestry",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "AI-powered document workspace for context engineering",
   "main": ".vite/build/main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saadiq/tapestry.git"
+  },
   "scripts": {
     "start": "electron-forge start",
     "package": "electron-forge package",
@@ -20,6 +24,21 @@
     "email": "saadiq@users.noreply.github.com"
   },
   "license": "MIT",
+  "build": {
+    "appId": "com.saadiq.tapestry",
+    "productName": "Tapestry",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.productivity"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "saadiq",
+      "repo": "tapestry"
+    }
+  },
   "devDependencies": {
     "@electron-forge/cli": "^7.9.0",
     "@electron-forge/maker-deb": "^7.9.0",
@@ -70,7 +89,9 @@
     "@tiptap/extension-typography": "^3.6.3",
     "@tiptap/react": "^3.6.3",
     "@tiptap/starter-kit": "^3.6.3",
+    "electron-log": "^5.4.3",
     "electron-squirrel-startup": "^1.0.1",
+    "electron-updater": "^6.6.2",
     "lowlight": "^3.3.0",
     "lucide-react": "^0.544.0",
     "markdown-it": "^14.1.0",

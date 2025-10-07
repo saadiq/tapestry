@@ -6,6 +6,14 @@ import * as directoryHandlers from './fileSystem/directoryHandlers';
 import * as fileWatcher from './fileSystem/fileWatcher';
 import { createApplicationMenu } from './menu/applicationMenu';
 import { ALLOWED_PROTOCOLS } from '../shared/constants';
+import {
+  initAutoUpdater,
+  cleanupAutoUpdater,
+  checkForUpdates,
+  downloadUpdate,
+  quitAndInstall,
+  getCurrentVersion,
+} from './updater';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -43,6 +51,9 @@ const createWindow = () => {
 
   // Open the DevTools.
   mainWindow.webContents.openDevTools();
+
+  // Initialize auto-updater after window is created
+  initAutoUpdater(mainWindow);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -153,6 +164,26 @@ function registerIpcHandlers() {
   ipcMain.handle('fs:unwatchDirectory', async (_event, dirPath: string) => {
     return fileWatcher.unwatchDirectory(dirPath);
   });
+
+  // Update operations
+  ipcMain.handle('check-for-updates', async () => {
+    checkForUpdates(false); // Not silent - show dialogs
+    return { success: true };
+  });
+
+  ipcMain.handle('download-update', async () => {
+    downloadUpdate();
+    return { success: true };
+  });
+
+  ipcMain.handle('quit-and-install', async () => {
+    quitAndInstall();
+    return { success: true };
+  });
+
+  ipcMain.handle('get-app-version', async () => {
+    return getCurrentVersion();
+  });
 }
 
 // This method will be called when Electron has finished
@@ -169,6 +200,9 @@ app.on('ready', () => {
 app.on('window-all-closed', () => {
   // Clean up file watchers
   fileWatcher.unwatchAll();
+
+  // Clean up auto-updater resources
+  cleanupAutoUpdater();
 
   if (process.platform !== 'darwin') {
     app.quit();

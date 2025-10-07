@@ -1,0 +1,73 @@
+# .github/workflows/release.yml
+name: Build and Release
+
+# Trigger on version tags
+on:
+  push:
+    tags:
+      - 'v*'  # Matches v0.0.1, v0.1.0, etc.
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest  # Use macOS runner for ARM Mac builds
+
+    steps:
+      # Checkout the code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Install Bun
+      - name: Install Bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> $GITHUB_PATH
+
+      # Install dependencies
+      - name: Install dependencies
+        run: bun install
+
+      # Build the app
+      - name: Build Electron app
+        run: bun run make
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Find the built artifacts
+      - name: List build artifacts
+        run: |
+          echo "Build artifacts:"
+          ls -la out/make/
+          ls -la out/make/zip/darwin/
+
+      # Find the ZIP file dynamically (handles version format differences)
+      - name: Find ZIP file
+        id: find_zip
+        run: |
+          ZIP_PATH=$(find out/make/zip/darwin/arm64 -name "*.zip" -type f | head -n 1)
+          echo "Found ZIP: $ZIP_PATH"
+          echo "ZIP_PATH=$ZIP_PATH" >> $GITHUB_OUTPUT
+          # Rename to consistent format for release
+          cp "$ZIP_PATH" "Tapestry-mac-${{ github.ref_name }}.zip"
+          echo "RELEASE_ZIP=Tapestry-mac-${{ github.ref_name }}.zip" >> $GITHUB_OUTPUT
+
+      # Create Release and Upload Assets
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: ${{ steps.find_zip.outputs.RELEASE_ZIP }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          body: |
+            ## What's Changed
+            Auto-generated release for ${{ github.ref_name }}
+
+            See commit history for changes.

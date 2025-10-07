@@ -7,7 +7,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { IElectronAPI } from '../shared/types';
+import type { IElectronAPI, UpdateInfo, UpdateStatus } from '../shared/types';
 import type {
   FileContent,
   FileOperationResult,
@@ -78,6 +78,36 @@ const electronAPI: IElectronAPI = {
         delete (callback as any).__ipcWrapper;
       }
     },
+  },
+
+  // Update APIs
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  downloadUpdate: () => ipcRenderer.invoke('download-update'),
+  quitAndInstall: () => ipcRenderer.invoke('quit-and-install'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+
+  // Update event listeners
+  onUpdateAvailable: (callback: (info: UpdateInfo) => void) => {
+    const wrapper = (_event: Electron.IpcRendererEvent, info: UpdateInfo) => callback(info);
+    (callback as any).__updateAvailableWrapper = wrapper;
+    ipcRenderer.on('update-available', wrapper);
+  },
+  onUpdateDownloaded: (callback: () => void) => {
+    const wrapper = () => callback();
+    (callback as any).__updateDownloadedWrapper = wrapper;
+    ipcRenderer.on('update-downloaded', wrapper);
+  },
+  onUpdateStatus: (callback: (status: UpdateStatus) => void) => {
+    const wrapper = (_event: Electron.IpcRendererEvent, status: UpdateStatus) => callback(status);
+    (callback as any).__updateStatusWrapper = wrapper;
+    ipcRenderer.on('update-status', wrapper);
+  },
+
+  // Remove listeners (for cleanup)
+  removeUpdateListeners: () => {
+    ipcRenderer.removeAllListeners('update-available');
+    ipcRenderer.removeAllListeners('update-downloaded');
+    ipcRenderer.removeAllListeners('update-status');
   },
 };
 
