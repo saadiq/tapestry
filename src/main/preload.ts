@@ -17,6 +17,12 @@ import type {
   FileWatcherEvent,
 } from '../shared/types/fileSystem';
 
+// WeakMaps to store IPC wrapper functions for cleanup
+const fileChangeWrappers = new WeakMap<Function, Function>();
+const updateAvailableWrappers = new WeakMap<Function, Function>();
+const updateDownloadedWrappers = new WeakMap<Function, Function>();
+const updateStatusWrappers = new WeakMap<Function, Function>();
+
 // Expose protected methods that allow the renderer process to use
 // ipcRenderer without exposing the entire object
 const electronAPI: IElectronAPI = {
@@ -63,19 +69,18 @@ const electronAPI: IElectronAPI = {
       ipcRenderer.invoke('fs:unwatchDirectory', dirPath),
 
     onFileChange: (callback: (event: FileWatcherEvent) => void): void => {
-      // Create wrapper that ipcRenderer expects and store it on the callback
-      // so we can remove it later with the same reference
+      // Create wrapper that ipcRenderer expects and store it in WeakMap
       const wrapper = (_event: any, data: FileWatcherEvent) => callback(data);
-      (callback as any).__ipcWrapper = wrapper;
+      fileChangeWrappers.set(callback, wrapper);
       ipcRenderer.on('file-watcher-event', wrapper);
     },
 
     removeFileChangeListener: (callback: (event: FileWatcherEvent) => void): void => {
-      // Retrieve the wrapper we stored during onFileChange
-      const wrapper = (callback as any).__ipcWrapper;
+      // Retrieve the wrapper from WeakMap
+      const wrapper = fileChangeWrappers.get(callback);
       if (wrapper) {
         ipcRenderer.removeListener('file-watcher-event', wrapper);
-        delete (callback as any).__ipcWrapper;
+        fileChangeWrappers.delete(callback);
       }
     },
   },
@@ -89,21 +94,44 @@ const electronAPI: IElectronAPI = {
   // Update event listeners
   onUpdateAvailable: (callback: (info: UpdateInfo) => void) => {
     const wrapper = (_event: Electron.IpcRendererEvent, info: UpdateInfo) => callback(info);
-    (callback as any).__updateAvailableWrapper = wrapper;
+    updateAvailableWrappers.set(callback, wrapper);
     ipcRenderer.on('update-available', wrapper);
   },
   onUpdateDownloaded: (callback: () => void) => {
     const wrapper = () => callback();
-    (callback as any).__updateDownloadedWrapper = wrapper;
+    updateDownloadedWrappers.set(callback, wrapper);
     ipcRenderer.on('update-downloaded', wrapper);
   },
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => {
     const wrapper = (_event: Electron.IpcRendererEvent, status: UpdateStatus) => callback(status);
-    (callback as any).__updateStatusWrapper = wrapper;
+    updateStatusWrappers.set(callback, wrapper);
     ipcRenderer.on('update-status', wrapper);
   },
 
-  // Remove listeners (for cleanup)
+  // Remove individual listeners (for cleanup)
+  removeUpdateAvailableListener: (callback: (info: UpdateInfo) => void) => {
+    const wrapper = updateAvailableWrappers.get(callback);
+    if (wrapper) {
+      ipcRenderer.removeListener('update-available', wrapper);
+      updateAvailableWrappers.delete(callback);
+    }
+  },
+  removeUpdateDownloadedListener: (callback: () => void) => {
+    const wrapper = updateDownloadedWrappers.get(callback);
+    if (wrapper) {
+      ipcRenderer.removeListener('update-downloaded', wrapper);
+      updateDownloadedWrappers.delete(callback);
+    }
+  },
+  removeUpdateStatusListener: (callback: (status: UpdateStatus) => void) => {
+    const wrapper = updateStatusWrappers.get(callback);
+    if (wrapper) {
+      ipcRenderer.removeListener('update-status', wrapper);
+      updateStatusWrappers.delete(callback);
+    }
+  },
+
+  // Remove all listeners (for cleanup)
   removeUpdateListeners: () => {
     ipcRenderer.removeAllListeners('update-available');
     ipcRenderer.removeAllListeners('update-downloaded');
