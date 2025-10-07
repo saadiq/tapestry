@@ -7,7 +7,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { IElectronAPI, UpdateInfo, UpdateStatus } from '../shared/types';
+import type { IElectronAPI, UpdateInfo, UpdateStatus, UpdateProgressInfo } from '../shared/types';
 import type {
   FileContent,
   FileOperationResult,

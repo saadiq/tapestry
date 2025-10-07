@@ -2,7 +2,7 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
-import type { UpdateInfo } from '../shared/types';
+import type { UpdateInfo, UpdateStatusType, UpdateStatusData } from '../shared/types';
 
 // Configure logging (optional but helpful for debugging)
 autoUpdater.logger = log;
@@ -14,6 +14,7 @@ if (autoUpdater.logger && 'transports' in autoUpdater.logger) {
 let updateInfo: UpdateInfo | null = null;
 let mainWindow: BrowserWindow | null = null;
 let updateCheckInterval: NodeJS.Timeout | null = null;
+let startupCheckTimeout: NodeJS.Timeout | null = null;
 
 // Track whether the current check is silent (no user dialogs for errors)
 let isSilentCheck = true;
@@ -33,8 +34,12 @@ export function initAutoUpdater(window: BrowserWindow) {
   setupEventHandlers();
 
   // Check for updates on startup (non-blocking)
-  setTimeout(() => {
-    checkForUpdates(true); // silent check
+  startupCheckTimeout = setTimeout(() => {
+    // Only check if window still exists
+    if (mainWindow) {
+      checkForUpdates(true); // silent check
+    }
+    startupCheckTimeout = null;
   }, 3000); // Wait 3 seconds after startup
 
   // Set up periodic checks (every 4 hours)
@@ -55,6 +60,10 @@ export function cleanupAutoUpdater() {
   if (updateCheckInterval) {
     clearInterval(updateCheckInterval);
     updateCheckInterval = null;
+  }
+  if (startupCheckTimeout) {
+    clearTimeout(startupCheckTimeout);
+    startupCheckTimeout = null;
   }
   mainWindow = null;
   updateInfo = null;
@@ -134,7 +143,7 @@ function setupEventHandlers() {
 /**
  * Send status updates to the renderer process
  */
-function sendStatusToWindow(status: string, data?: any) {
+function sendStatusToWindow(status: UpdateStatusType, data?: UpdateStatusData) {
   if (mainWindow) {
     mainWindow.webContents.send('update-status', { status, data });
   }
@@ -150,18 +159,8 @@ export function checkForUpdates(silent = false) {
 
   autoUpdater.checkForUpdatesAndNotify().catch((err) => {
     log.error('Update check failed:', err);
-
-    // Error dialogs are now handled in the 'error' event handler
-    // This ensures consistent error handling across all error scenarios
-    if (!silent && mainWindow) {
-      dialog.showMessageBox(mainWindow, {
-        type: 'error',
-        title: 'Update Check Failed',
-        message: 'Unable to check for updates',
-        detail: err.message || 'An unknown error occurred. Please check your internet connection and try again.',
-        buttons: ['OK'],
-      });
-    }
+    // Error dialogs are handled in the 'error' event handler
+    // to ensure consistent error handling across all error scenarios
   });
 }
 

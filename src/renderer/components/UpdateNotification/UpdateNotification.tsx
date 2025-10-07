@@ -1,12 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Download, X, CheckCircle } from 'lucide-react';
-
-interface UpdateInfo {
-  version: string;
-  releaseNotes?: string;
-  releaseName?: string;
-  releaseDate?: string;
-}
+import type { UpdateInfo, UpdateProgressInfo } from '@shared/types';
 
 export const UpdateNotification: React.FC = () => {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -35,7 +29,8 @@ export const UpdateNotification: React.FC = () => {
 
     window.electronAPI.onUpdateStatus((status) => {
       if (status.status === 'download-progress' && status.data) {
-        setDownloadProgress(Math.round(status.data.percent));
+        const progressData = status.data as UpdateProgressInfo;
+        setDownloadProgress(Math.round(progressData.percent));
       }
     });
 

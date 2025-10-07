@@ -58,9 +58,30 @@ export interface UpdateInfo {
   releaseDate?: string;
 }
 
+export type UpdateStatusType =
+  | 'checking-for-update'
+  | 'update-available'
+  | 'update-not-available'
+  | 'update-error'
+  | 'download-progress'
+  | 'update-downloaded';
+
+export interface UpdateProgressInfo {
+  bytesPerSecond: number;
+  percent: number;
+  transferred: number;
+  total: number;
+}
+
+export type UpdateStatusData =
+  | UpdateInfo
+  | UpdateProgressInfo
+  | string
+  | undefined;
+
 export interface UpdateStatus {
-  status: string;
-  data?: any;
+  status: UpdateStatusType;
+  data?: UpdateStatusData;
 }
 
 // Extend Window interface to include our API
