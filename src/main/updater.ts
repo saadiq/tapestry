@@ -2,7 +2,7 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
-import type { UpdateInfo } from '../shared/types';
+import type { UpdateInfo, UpdateStatus } from '../shared/types';
 
 // Configure logging (optional but helpful for debugging)
 autoUpdater.logger = log;
@@ -14,6 +14,7 @@ if (autoUpdater.logger && 'transports' in autoUpdater.logger) {
 let updateInfo: UpdateInfo | null = null;
 let mainWindow: BrowserWindow | null = null;
 let updateCheckInterval: NodeJS.Timeout | null = null;
+let startupCheckTimeout: NodeJS.Timeout | null = null;
 
 // Track whether the current check is silent (no user dialogs for errors)
 let isSilentCheck = true;
@@ -33,7 +34,7 @@ export function initAutoUpdater(window: BrowserWindow) {
   setupEventHandlers();
 
   // Check for updates on startup (non-blocking)
-  setTimeout(() => {
+  startupCheckTimeout = setTimeout(() => {
     checkForUpdates(true); // silent check
   }, 3000); // Wait 3 seconds after startup
 
@@ -56,6 +57,10 @@ export function cleanupAutoUpdater() {
     clearInterval(updateCheckInterval);
     updateCheckInterval = null;
   }
+  if (startupCheckTimeout) {
+    clearTimeout(startupCheckTimeout);
+    startupCheckTimeout = null;
+  }
   mainWindow = null;
   updateInfo = null;
 }
@@ -67,36 +72,43 @@ function setupEventHandlers() {
   // When checking for updates starts
   autoUpdater.on('checking-for-update', () => {
     log.info('Checking for updates...');
-    sendStatusToWindow('checking-for-update');
+    sendStatusToWindow({ status: 'checking-for-update' });
   });
 
   // When an update is available
   autoUpdater.on('update-available', (info) => {
     log.info('Update available:', info);
     updateInfo = info;
-    sendStatusToWindow('update-available', info);
+    const updateInfoData: UpdateInfo = {
+      version: info.version,
+      releaseNotes: info.releaseNotes,
+      releaseName: info.releaseName,
+      releaseDate: info.releaseDate,
+    };
+    sendStatusToWindow({ status: 'update-available', data: updateInfoData });
 
     // Show notification in renderer
     if (mainWindow) {
-      mainWindow.webContents.send('update-available', {
-        version: info.version,
-        releaseNotes: info.releaseNotes,
-        releaseName: info.releaseName,
-        releaseDate: info.releaseDate,
-      });
+      mainWindow.webContents.send('update-available', updateInfoData);
     }
   });
 
   // When no update is available
   autoUpdater.on('update-not-available', (info) => {
     log.info('Update not available');
-    sendStatusToWindow('update-not-available', info);
+    const updateInfoData: UpdateInfo = {
+      version: info.version,
+      releaseNotes: info.releaseNotes,
+      releaseName: info.releaseName,
+      releaseDate: info.releaseDate,
+    };
+    sendStatusToWindow({ status: 'update-not-available', data: updateInfoData });
   });
 
   // Error handling
   autoUpdater.on('error', (err) => {
     log.error('Update error:', err);
-    sendStatusToWindow('update-error', err.message);
+    sendStatusToWindow({ status: 'update-error', data: err.message });
 
     // Show error to user for manual (non-silent) checks
     if (!isSilentCheck && mainWindow) {
@@ -116,13 +128,27 @@ function setupEventHandlers() {
     logMessage = `${logMessage} - Downloaded ${progressObj.percent}%`;
     logMessage = `${logMessage} (${progressObj.transferred}/${progressObj.total})`;
     log.info(logMessage);
-    sendStatusToWindow('download-progress', progressObj);
+    sendStatusToWindow({
+      status: 'download-progress',
+      data: {
+        bytesPerSecond: progressObj.bytesPerSecond,
+        percent: progressObj.percent,
+        transferred: progressObj.transferred,
+        total: progressObj.total,
+      },
+    });
   });
 
   // When update is downloaded
   autoUpdater.on('update-downloaded', (info) => {
     log.info('Update downloaded');
-    sendStatusToWindow('update-downloaded', info);
+    const updateInfoData: UpdateInfo = {
+      version: info.version,
+      releaseNotes: info.releaseNotes,
+      releaseName: info.releaseName,
+      releaseDate: info.releaseDate,
+    };
+    sendStatusToWindow({ status: 'update-downloaded', data: updateInfoData });
 
     // Notify renderer that update is ready
     if (mainWindow) {
@@ -134,9 +160,9 @@ function setupEventHandlers() {
 /**
  * Send status updates to the renderer process
  */
-function sendStatusToWindow(status: string, data?: any) {
+function sendStatusToWindow(statusUpdate: UpdateStatus) {
   if (mainWindow) {
-    mainWindow.webContents.send('update-status', { status, data });
+    mainWindow.webContents.send('update-status', statusUpdate);
   }
 }
 
@@ -150,18 +176,8 @@ export function checkForUpdates(silent = false) {
 
   autoUpdater.checkForUpdatesAndNotify().catch((err) => {
     log.error('Update check failed:', err);
-
-    // Error dialogs are now handled in the 'error' event handler
-    // This ensures consistent error handling across all error scenarios
-    if (!silent && mainWindow) {
-      dialog.showMessageBox(mainWindow, {
-        type: 'error',
-        title: 'Update Check Failed',
-        message: 'Unable to check for updates',
-        detail: err.message || 'An unknown error occurred. Please check your internet connection and try again.',
-        buttons: ['OK'],
-      });
-    }
+    // Error dialogs are handled in the 'error' event handler
+    // No need to show duplicate dialogs here
   });
 }
 
