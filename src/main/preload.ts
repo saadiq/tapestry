@@ -108,7 +108,30 @@ const electronAPI: IElectronAPI = {
     ipcRenderer.on('update-status', wrapper);
   },
 
-  // Remove listeners (for cleanup)
+  // Remove individual listeners (for cleanup)
+  removeUpdateAvailableListener: (callback: (info: UpdateInfo) => void) => {
+    const wrapper = updateAvailableWrappers.get(callback);
+    if (wrapper) {
+      ipcRenderer.removeListener('update-available', wrapper);
+      updateAvailableWrappers.delete(callback);
+    }
+  },
+  removeUpdateDownloadedListener: (callback: () => void) => {
+    const wrapper = updateDownloadedWrappers.get(callback);
+    if (wrapper) {
+      ipcRenderer.removeListener('update-downloaded', wrapper);
+      updateDownloadedWrappers.delete(callback);
+    }
+  },
+  removeUpdateStatusListener: (callback: (status: UpdateStatus) => void) => {
+    const wrapper = updateStatusWrappers.get(callback);
+    if (wrapper) {
+      ipcRenderer.removeListener('update-status', wrapper);
+      updateStatusWrappers.delete(callback);
+    }
+  },
+
+  // Remove all listeners (for cleanup)
   removeUpdateListeners: () => {
     ipcRenderer.removeAllListeners('update-available');
     ipcRenderer.removeAllListeners('update-downloaded');

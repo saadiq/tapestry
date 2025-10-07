@@ -48,6 +48,9 @@ export interface IElectronAPI {
   onUpdateAvailable: (callback: (info: UpdateInfo) => void) => void;
   onUpdateDownloaded: (callback: () => void) => void;
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => void;
+  removeUpdateAvailableListener: (callback: (info: UpdateInfo) => void) => void;
+  removeUpdateDownloadedListener: (callback: () => void) => void;
+  removeUpdateStatusListener: (callback: (status: UpdateStatus) => void) => void;
   removeUpdateListeners: () => void;
 }
 
