@@ -12,6 +12,14 @@ export function createApplicationMenu(mainWindow: BrowserWindow | null) {
             submenu: [
               { role: 'about' as const },
               { type: 'separator' as const },
+              {
+                label: 'Check for Updates...',
+                click: async () => {
+                  const { checkForUpdates } = await import('../updater');
+                  checkForUpdates(false); // Not silent
+                }
+              },
+              { type: 'separator' as const },
               { role: 'services' as const },
               { type: 'separator' as const },
               { role: 'hide' as const },
@@ -150,7 +158,17 @@ export function createApplicationMenu(mainWindow: BrowserWindow | null) {
             const { shell } = await import('electron');
             await shell.openExternal('https://github.com/tapestry');
           }
-        }
+        },
+        ...(isMac ? [] : [
+          { type: 'separator' as const },
+          {
+            label: 'Check for Updates...',
+            click: async () => {
+              const { checkForUpdates } = await import('../updater');
+              checkForUpdates(false); // Not silent
+            }
+          }
+        ])
       ]
     }
   ];

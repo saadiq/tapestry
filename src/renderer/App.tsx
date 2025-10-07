@@ -12,6 +12,7 @@ import { NoDirectorySelected } from './components/EmptyStates/NoDirectorySelecte
 import { NoFileOpen } from './components/EmptyStates/NoFileOpen';
 import { ToastProvider, useToast } from './components/Notifications';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { UpdateNotification } from './components/UpdateNotification';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useFileContent } from './hooks/useFileContent';
@@ -492,42 +493,47 @@ function AppContent() {
   }, []);
 
   return (
-    <MainLayout
-      theme={theme}
-      onToggleTheme={toggleTheme}
-      currentFile={fileContent.filePath || undefined}
-      isDirty={fileContent.isDirty}
-      wordCount={wordCount}
-      cursorPosition={cursorPosition}
-      onSave={handleSave}
-      onOpenFolder={handleOpenFolder}
-      onNewFile={handleNewFile}
-      sidebar={rootPath ? <Sidebar /> : undefined}
-    >
-      {!rootPath ? (
-        <NoDirectorySelected onOpenFolder={handleOpenFolder} />
-      ) : !activePath ? (
-        <NoFileOpen hasDirectory={!!rootPath} onNewFile={handleNewFile} />
-      ) : (fileContent.loading || isLoadingFile) ? (
-        <div className="flex items-center justify-center h-full">
-          <span className="loading loading-spinner loading-lg" role="status" aria-label="Loading file"></span>
-        </div>
-      ) : fileContent.error ? (
-        <div className="flex items-center justify-center h-full">
-          <div className="alert alert-error max-w-md">
-            <span>{fileContent.error}</span>
+    <>
+      <MainLayout
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        currentFile={fileContent.filePath || undefined}
+        isDirty={fileContent.isDirty}
+        wordCount={wordCount}
+        cursorPosition={cursorPosition}
+        onSave={handleSave}
+        onOpenFolder={handleOpenFolder}
+        onNewFile={handleNewFile}
+        sidebar={rootPath ? <Sidebar /> : undefined}
+      >
+        {!rootPath ? (
+          <NoDirectorySelected onOpenFolder={handleOpenFolder} />
+        ) : !activePath ? (
+          <NoFileOpen hasDirectory={!!rootPath} onNewFile={handleNewFile} />
+        ) : (fileContent.loading || isLoadingFile) ? (
+          <div className="flex items-center justify-center h-full">
+            <span className="loading loading-spinner loading-lg" role="status" aria-label="Loading file"></span>
           </div>
-        </div>
-      ) : (
-        <EditorComponent
-          content={fileContent.content}
-          onUpdate={handleUpdate}
-          onContentLoaded={handleContentLoaded}
-          placeholder="Start typing your document..."
-          editable={true}
-        />
-      )}
-    </MainLayout>
+        ) : fileContent.error ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="alert alert-error max-w-md">
+              <span>{fileContent.error}</span>
+            </div>
+          </div>
+        ) : (
+          <EditorComponent
+            content={fileContent.content}
+            onUpdate={handleUpdate}
+            onContentLoaded={handleContentLoaded}
+            placeholder="Start typing your document..."
+            editable={true}
+          />
+        )}
+      </MainLayout>
+
+      {/* Update notification - renders on top of everything */}
+      <UpdateNotification />
+    </>
   );
 }
 
