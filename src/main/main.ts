@@ -8,6 +8,7 @@ import { createApplicationMenu } from './menu/applicationMenu';
 import { ALLOWED_PROTOCOLS } from '../shared/constants';
 import {
   initAutoUpdater,
+  cleanupAutoUpdater,
   checkForUpdates,
   downloadUpdate,
   quitAndInstall,
@@ -199,6 +200,9 @@ app.on('ready', () => {
 app.on('window-all-closed', () => {
   // Clean up file watchers
   fileWatcher.unwatchAll();
+
+  // Clean up auto-updater resources
+  cleanupAutoUpdater();
 
   if (process.platform !== 'darwin') {
     app.quit();

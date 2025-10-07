@@ -52,31 +52,22 @@ jobs:
           ZIP_PATH=$(find out/make/zip/darwin/arm64 -name "*.zip" -type f | head -n 1)
           echo "Found ZIP: $ZIP_PATH"
           echo "ZIP_PATH=$ZIP_PATH" >> $GITHUB_OUTPUT
+          # Rename to consistent format for release
+          cp "$ZIP_PATH" "Tapestry-mac-${{ github.ref_name }}.zip"
+          echo "RELEASE_ZIP=Tapestry-mac-${{ github.ref_name }}.zip" >> $GITHUB_OUTPUT
 
-      # Create Release
+      # Create Release and Upload Assets
       - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
+          files: ${{ steps.find_zip.outputs.RELEASE_ZIP }}
+          name: Release ${{ github.ref_name }}
           draft: false
           prerelease: false
           body: |
             ## What's Changed
-            Auto-generated release for ${{ github.ref }}
+            Auto-generated release for ${{ github.ref_name }}
 
             See commit history for changes.
-
-      # Upload the ZIP file
-      - name: Upload Mac ZIP
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ${{ steps.find_zip.outputs.ZIP_PATH }}
-          asset_name: Tapestry-mac-${{ github.ref_name }}.zip
-          asset_content_type: application/zip

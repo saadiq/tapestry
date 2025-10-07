@@ -2,6 +2,7 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
+import type { UpdateInfo } from '../shared/types';
 
 // Configure logging (optional but helpful for debugging)
 autoUpdater.logger = log;
@@ -10,8 +11,12 @@ if (autoUpdater.logger && 'transports' in autoUpdater.logger) {
 }
 
 // Store update info for later use
-let updateInfo: any = null;
+let updateInfo: UpdateInfo | null = null;
 let mainWindow: BrowserWindow | null = null;
+let updateCheckInterval: NodeJS.Timeout | null = null;
+
+// Track whether the current check is silent (no user dialogs for errors)
+let isSilentCheck = true;
 
 /**
  * Initialize the auto-updater
@@ -33,12 +38,26 @@ export function initAutoUpdater(window: BrowserWindow) {
   }, 3000); // Wait 3 seconds after startup
 
   // Set up periodic checks (every 4 hours)
-  setInterval(
+  // Store interval reference for cleanup
+  updateCheckInterval = setInterval(
     () => {
       checkForUpdates(true); // silent check
     },
     4 * 60 * 60 * 1000,
   );
+}
+
+/**
+ * Cleanup auto-updater resources
+ * Call this when the app is quitting
+ */
+export function cleanupAutoUpdater() {
+  if (updateCheckInterval) {
+    clearInterval(updateCheckInterval);
+    updateCheckInterval = null;
+  }
+  mainWindow = null;
+  updateInfo = null;
 }
 
 /**
@@ -78,6 +97,17 @@ function setupEventHandlers() {
   autoUpdater.on('error', (err) => {
     log.error('Update error:', err);
     sendStatusToWindow('update-error', err.message);
+
+    // Show error to user for manual (non-silent) checks
+    if (!isSilentCheck && mainWindow) {
+      dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'Update Error',
+        message: 'Failed to check for updates',
+        detail: err.message || 'An unknown error occurred while checking for updates.',
+        buttons: ['OK'],
+      });
+    }
   });
 
   // Download progress
@@ -112,15 +142,25 @@ function sendStatusToWindow(status: string, data?: any) {
 
 /**
  * Manually check for updates
- * @param silent - If true, don't show dialogs for "no update available"
+ * @param silent - If true, don't show dialogs for "no update available" or errors
  */
 export function checkForUpdates(silent = false) {
+  // Update the global flag so error handler knows whether to show dialogs
+  isSilentCheck = silent;
+
   autoUpdater.checkForUpdatesAndNotify().catch((err) => {
-    if (!silent) {
-      dialog.showErrorBox(
-        'Update Check Failed',
-        `Unable to check for updates: ${err.message}`,
-      );
+    log.error('Update check failed:', err);
+
+    // Error dialogs are now handled in the 'error' event handler
+    // This ensures consistent error handling across all error scenarios
+    if (!silent && mainWindow) {
+      dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'Update Check Failed',
+        message: 'Unable to check for updates',
+        detail: err.message || 'An unknown error occurred. Please check your internet connection and try again.',
+        buttons: ['OK'],
+      });
     }
   });
 }

@@ -7,7 +7,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { IElectronAPI } from '../shared/types';
+import type { IElectronAPI, UpdateInfo, UpdateStatus } from '../shared/types';
 import type {
   FileContent,
   FileOperationResult,
@@ -87,14 +87,20 @@ const electronAPI: IElectronAPI = {
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
   // Update event listeners
-  onUpdateAvailable: (callback: (info: any) => void) => {
-    ipcRenderer.on('update-available', (_event, info) => callback(info));
+  onUpdateAvailable: (callback: (info: UpdateInfo) => void) => {
+    const wrapper = (_event: Electron.IpcRendererEvent, info: UpdateInfo) => callback(info);
+    (callback as any).__updateAvailableWrapper = wrapper;
+    ipcRenderer.on('update-available', wrapper);
   },
   onUpdateDownloaded: (callback: () => void) => {
-    ipcRenderer.on('update-downloaded', callback);
+    const wrapper = () => callback();
+    (callback as any).__updateDownloadedWrapper = wrapper;
+    ipcRenderer.on('update-downloaded', wrapper);
   },
-  onUpdateStatus: (callback: (status: any) => void) => {
-    ipcRenderer.on('update-status', (_event, status) => callback(status));
+  onUpdateStatus: (callback: (status: UpdateStatus) => void) => {
+    const wrapper = (_event: Electron.IpcRendererEvent, status: UpdateStatus) => callback(status);
+    (callback as any).__updateStatusWrapper = wrapper;
+    ipcRenderer.on('update-status', wrapper);
   },
 
   // Remove listeners (for cleanup)
