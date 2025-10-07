@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { normalizePath, getDirectoryPath, isPathWithinDirectory } from '../utils/pathUtils';
+import { normalizePath, getDirectoryPath, isPathWithinDirectory, isChildPath } from '../utils/pathUtils';
 
 describe('pathUtils', () => {
   describe('normalizePath', () => {
@@ -168,6 +168,76 @@ describe('pathUtils', () => {
       // Root path '/' is now preserved, so paths starting with '/' should match
       expect(isPathWithinDirectory('/Users/test/file.md', '/')).toBe(true);
       expect(isPathWithinDirectory('/file.md', '/')).toBe(true);
+    });
+  });
+
+  describe('isChildPath', () => {
+    it('should return true for direct child file', () => {
+      expect(isChildPath('/parent/child/file.md', '/parent')).toBe(true);
+    });
+
+    it('should return true for direct child directory', () => {
+      expect(isChildPath('/parent/child', '/parent')).toBe(true);
+    });
+
+    it('should return true for nested child file', () => {
+      expect(isChildPath('/parent/child/deep/file.md', '/parent')).toBe(true);
+    });
+
+    it('should return false for same path', () => {
+      expect(isChildPath('/parent', '/parent')).toBe(false);
+    });
+
+    it('should return false for file outside directory', () => {
+      expect(isChildPath('/other/file.md', '/parent')).toBe(false);
+    });
+
+    it('should prevent false positives with similar names', () => {
+      // Critical edge case: /parent vs /parentfoo
+      expect(isChildPath('/parentfoo/file.md', '/parent')).toBe(false);
+      expect(isChildPath('/Users/foo/file.md', '/Users/foobar')).toBe(false);
+    });
+
+    it('should handle trailing slashes correctly', () => {
+      expect(isChildPath('/parent/child/file.md', '/parent/')).toBe(true);
+      expect(isChildPath('/parent/child/', '/parent')).toBe(true);
+    });
+
+    it('should handle Windows paths', () => {
+      expect(isChildPath('C:\\Users\\test\\file.md', 'C:\\Users\\test')).toBe(true);
+      expect(isChildPath('C:\\Users\\other\\file.md', 'C:\\Users\\test')).toBe(false);
+    });
+
+    it('should handle mixed slashes', () => {
+      expect(isChildPath('C:/Users/test/file.md', 'C:\\Users\\test')).toBe(true);
+    });
+
+    it('should return false for empty paths', () => {
+      expect(isChildPath('', '/parent')).toBe(false);
+      expect(isChildPath('/child', '')).toBe(false);
+      expect(isChildPath('', '')).toBe(false);
+    });
+
+    it('should return false for null/undefined paths', () => {
+      expect(isChildPath(null as any, '/parent')).toBe(false);
+      expect(isChildPath('/child', null as any)).toBe(false);
+      expect(isChildPath(undefined as any, '/parent')).toBe(false);
+      expect(isChildPath('/child', undefined as any)).toBe(false);
+    });
+
+    it('should handle case-sensitive paths correctly', () => {
+      expect(isChildPath('/Parent/child/file.md', '/parent')).toBe(false);
+    });
+
+    it('should handle root directory correctly', () => {
+      expect(isChildPath('/Users/test/file.md', '/')).toBe(true);
+      expect(isChildPath('/', '/')).toBe(false); // Same path
+    });
+
+    it('should validate the critical bug fix scenario', () => {
+      // The exact scenario from the bug: deleting /test/parent should not affect /test/parentfoo
+      expect(isChildPath('/test/parentfoo/file.md', '/test/parent')).toBe(false);
+      expect(isChildPath('/test/parent/file.md', '/test/parent')).toBe(true);
     });
   });
 });

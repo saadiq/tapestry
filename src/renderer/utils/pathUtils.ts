@@ -110,3 +110,41 @@ export function isPathWithinDirectory(childPath: string, parentPath: string): bo
 
   return normalizedChild.startsWith(normalizedParent);
 }
+
+/**
+ * Check if a child path is a direct or nested child of a parent directory
+ * Prevents false positives like "/Users/foo" matching "/Users/foobar/file.md"
+ * Returns false for invalid inputs or if paths are equal
+ *
+ * @param childPath - The path to check
+ * @param parentPath - The parent directory path
+ * @returns True if childPath is a child of parentPath (not equal), false otherwise
+ *
+ * @example
+ * isChildPath('/parent/child/file.md', '/parent') // true
+ * isChildPath('/parent/file.md', '/parent') // true
+ * isChildPath('/parentfoo/file.md', '/parent') // false (no false positive)
+ * isChildPath('/parent', '/parent') // false (paths are equal)
+ * isChildPath('', '/parent') // false
+ */
+export function isChildPath(childPath: string, parentPath: string): boolean {
+  if (childPath == null || childPath === '' || parentPath == null || parentPath === '') {
+    return false;
+  }
+
+  const normalizedChild = normalizePath(childPath);
+  const normalizedParent = normalizePath(parentPath);
+
+  // If normalization returned empty strings or paths are equal, return false
+  if (normalizedChild === '' || normalizedParent === '' || normalizedChild === normalizedParent) {
+    return false;
+  }
+
+  // Special case for root directory: root parent should match any child starting with /
+  if (normalizedParent === '/') {
+    return normalizedChild.startsWith('/') && normalizedChild !== '/';
+  }
+
+  // Check if child starts with parent followed by a path separator
+  return normalizedChild.startsWith(normalizedParent + '/');
+}

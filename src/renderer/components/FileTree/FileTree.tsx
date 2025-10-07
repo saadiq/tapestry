@@ -10,6 +10,7 @@ import { FileTreeItem } from './FileTreeItem';
 import { ContextMenu } from './ContextMenu';
 import { InputModal, ConfirmDialog } from '../Modals';
 import { useFileTreeContext } from '../../store/fileTreeStore';
+import { useToast } from '../Notifications';
 import type {
   FileNode,
   ContextMenuState,
@@ -39,6 +40,8 @@ export function FileTree() {
     rename,
     delete: deleteNode,
   } = useFileTreeContext();
+
+  const toast = useToast();
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     isOpen: false,
@@ -168,8 +171,15 @@ export function FileTree() {
   };
 
   const handleDelete = async () => {
-    await deleteNode(deleteDialog.path);
+    const success = await deleteNode(deleteDialog.path);
+    const fileName = deleteDialog.name;
     setDeleteDialog({ isOpen: false, path: '', name: '' });
+
+    if (success) {
+      toast.showSuccess(`File "${fileName}" deleted successfully`);
+    } else {
+      toast.showError(`Failed to delete "${fileName}"`);
+    }
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {

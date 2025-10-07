@@ -5,6 +5,7 @@
 
 import { createContext, useContext, ReactNode, useState, useCallback, useEffect } from 'react';
 import { fileSystemService } from '../services/fileSystemService';
+import { isChildPath } from '../utils/pathUtils';
 import type { DirectoryEntry } from '../../shared/types/fileSystem';
 import type {
   FileNode,
@@ -259,12 +260,56 @@ export function FileTreeProvider({ children }: FileTreeProviderProps) {
     }
   }, [state.rootPath, loadDirectory]);
 
+  /**
+   * Clean up file tree state after deleting a file or directory
+   * Clears active/selected paths and dirty state for the deleted path and its children
+   *
+   * @param deletedPath - The path that was deleted
+   * @param prevState - The previous file tree state
+   * @returns Updated state with cleaned up paths, or unchanged state if no cleanup needed
+   */
+  const cleanupStateAfterDelete = useCallback((deletedPath: string, prevState: FileTreeState): FileTreeState => {
+    // Check if we need to update any state
+    const isActiveFile = prevState.activePath === deletedPath;
+    const isParentOfActive = prevState.activePath ? isChildPath(prevState.activePath, deletedPath) : false;
+    const isSelectedFile = prevState.selectedPath === deletedPath;
+
+    // Check if any dirty paths need cleanup (deleted file or its children)
+    const hasDirtyPaths = Array.from(prevState.dirtyPaths).some(
+      p => p === deletedPath || isChildPath(p, deletedPath)
+    );
+
+    const needsUpdate = isActiveFile || isParentOfActive || isSelectedFile || hasDirtyPaths;
+
+    if (!needsUpdate) {
+      return prevState; // No state change needed
+    }
+
+    // Clean up dirtyPaths - remove deleted file and any children (for directory deletion)
+    const newDirtyPaths = hasDirtyPaths
+      ? new Set(Array.from(prevState.dirtyPaths).filter(p => p !== deletedPath && !isChildPath(p, deletedPath)))
+      : prevState.dirtyPaths;
+
+    return {
+      ...prevState,
+      // Clear active path if deleting the active file or its parent directory
+      activePath: (isActiveFile || isParentOfActive) ? null : prevState.activePath,
+      // Clear selected path if deleting the selected file
+      selectedPath: isSelectedFile ? null : prevState.selectedPath,
+      // Clean dirty paths
+      dirtyPaths: newDirtyPaths,
+    };
+  }, []);
+
   // Delete a file or directory
   const deleteNode = useCallback(async (path: string) => {
     try {
       const result = await fileSystemService.deleteFile(path);
 
       if (result.success) {
+        // Clear state synchronously before refresh to prevent reload attempts on deleted files
+        setState((prev) => cleanupStateAfterDelete(path, prev));
+
         // Refresh directory tree to remove deleted file
         if (state.rootPath) {
           await loadDirectory(state.rootPath);
@@ -280,7 +325,7 @@ export function FileTreeProvider({ children }: FileTreeProviderProps) {
       }));
       return false;
     }
-  }, [state.rootPath, loadDirectory]);
+  }, [state.rootPath, loadDirectory, cleanupStateAfterDelete]);
 
   // Refresh the tree
   const refresh = useCallback(async () => {
