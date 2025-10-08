@@ -156,7 +156,7 @@ import { FileText, FolderOpen } from 'lucide-react';
 
 - ✅ **Phase 1**: Add Modal State to App Component - COMPLETED
 - ✅ **Phase 2**: Implement New File Handler Logic (with security validation) - COMPLETED
-- ⏳ **Phase 3**: Wire Up Modal UI - NOT STARTED
+- ✅ **Phase 3**: Wire Up Modal UI - COMPLETED
 - ⏳ **Phase 4**: Add Unit Tests (including security tests) - NOT STARTED
 - ⏳ **Phase 5**: Manual Testing & Documentation - NOT STARTED
 
@@ -540,7 +540,7 @@ This phase adds the actual modal component to the UI and connects the handlers.
 
 #### Task 3.1: Import InputModal component
 
-**Status**: ⏳ Not started
+**Status**: ✅ Completed
 
 **Description**: Add the import statement for the InputModal component at the top of App.tsx.
 
@@ -596,7 +596,7 @@ Part of new-file-button implementation.
 
 #### Task 3.2: Add InputModal to JSX
 
-**Status**: ⏳ Not started
+**Status**: ✅ Completed
 
 **Description**: Add the InputModal component to the JSX, right after the closing `</MainLayout>` tag and before the `<UpdateNotification />`. This renders the modal in the component tree.
 
