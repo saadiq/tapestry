@@ -23,6 +23,29 @@ import type { FileWatcherEvent } from '../shared/types/fileSystem';
 import { normalizePath } from './utils/pathUtils';
 import { TIMING_CONFIG } from '../shared/config/timing';
 
+/**
+ * Save tracking architecture:
+ *
+ * Each AppContent component instance maintains its own save tracking state to coordinate
+ * with file system watchers and prevent false "external edit" warnings.
+ *
+ * Implementation details:
+ * - activeSavesRef: Map<string, number> (normalized filePath -> timestamp)
+ * - trackSaveStart: Marks when a save begins (adds timestamp)
+ * - isSaveActive: Checks if file was saved within FILE_WATCHER_DEBOUNCE_MS (2000ms)
+ * - No trackSaveEnd: Timestamps persist for full debounce window to prevent race conditions
+ *
+ * Why timestamps persist (no early removal):
+ * 1. File watcher events arrive 500-2000ms after save completes (macOS/network drive latency)
+ * 2. Early removal caused race conditions with false "external edit" warnings
+ * 3. Memory is managed via eager cleanup when map exceeds threshold (50 entries)
+ *
+ * Previous approaches that didn't work:
+ * - Module-level state: Poor isolation between component instances
+ * - Periodic cleanup timer: Unnecessary overhead for typical usage
+ * - trackSaveEnd with setTimeout: Race conditions with delayed file watcher events
+ */
+
 // Inner component that has access to FileTreeContext and Toast
 function AppContent() {
   const { theme, toggleTheme } = useTheme();
@@ -93,19 +116,6 @@ function AppContent() {
     return Date.now() - saveTimestamp < TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS;
   }, []);
 
-  /**
-   * Mark a save operation as complete
-   * Note: We don't delete from activeSaves here because:
-   * 1. isSaveActive() uses timestamp checking for debounce (not map presence)
-   * 2. Eager cleanup in trackSaveStart() handles rapid file switching
-   * 3. Periodic cleanup interval removes stale entries every 10s
-   * 4. Using setTimeout here caused race conditions with rapid successive saves
-   */
-  const trackSaveEnd = useCallback((_filePath: string): void => {
-    // No-op: timestamp remains in map for isSaveActive() checking
-    // Cleanup happens via eager cleanup in trackSaveStart() and periodic interval
-  }, []);
-
   // Save lifecycle callbacks to track save state per file
   const handleBeforeSave = useCallback(() => {
     const currentPath = currentFilePathRef.current;
@@ -115,11 +125,10 @@ function AppContent() {
   }, [trackSaveStart]);
 
   const handleAfterSave = useCallback((_success: boolean) => {
-    const currentPath = currentFilePathRef.current;
-    if (currentPath) {
-      trackSaveEnd(currentPath);
-    }
-  }, [trackSaveEnd]);
+    // Note: We intentionally don't do anything here because isSaveActive() uses timestamp checking.
+    // The timestamp from handleBeforeSave persists for FILE_WATCHER_DEBOUNCE_MS (2000ms) to properly
+    // ignore file watcher events triggered by our own saves. Periodic cleanup removes stale entries.
+  }, []);
 
   const fileContent = useFileContent({
     enableAutoSave: true,
@@ -168,7 +177,13 @@ function AppContent() {
     // Only update content and originalContent when file is not dirty
     if (!fileContent.isDirty) {
       fileContent.updateOriginalContent(convertedContent);
-      fileContent.updateContent(convertedContent);
+
+      // Only update content if it's actually different to prevent cursor jumps
+      // This happens during auto-save: file becomes clean, editor fires onContentLoaded,
+      // but content hasn't changed - updating it would reset cursor position
+      if (fileContent.content !== convertedContent) {
+        fileContent.updateContent(convertedContent);
+      }
     }
   }, [fileContent]);
 
@@ -353,11 +368,11 @@ function AppContent() {
           if (!result.success) {
             // Don't prevent blur, but show warning
             currentToast.showWarning(`Auto-save failed on window blur: ${result.error}`);
-            // Track save end on failure
-            trackSaveEnd(capturedState.filePath);
+            // Note: We don't call trackSaveEnd on failure - the timestamp will age out naturally
+            // This ensures we don't get false positives if the file gets modified externally shortly after
           } else {
-            // Schedule save end tracking after debounce period for file watcher coordination
-            setTimeout(() => trackSaveEnd(capturedState.filePath), TIMING_CONFIG.SAVE_EVENT_TRACKING_DELAY_MS);
+            // Note: We don't call trackSaveEnd here - the timestamp from trackSaveStart (line 446)
+            // persists for FILE_WATCHER_DEBOUNCE_MS (2000ms) to ignore file watcher events
 
             // Only clear dirty state if still on the same file
             if (fileContentRef.current.filePath === capturedState.filePath) {
@@ -368,8 +383,7 @@ function AppContent() {
           currentToast.showWarning(
             `Auto-save failed on window blur: ${error instanceof Error ? error.message : 'Unknown error'}`
           );
-          // Track save end on error
-          trackSaveEnd(capturedState.filePath);
+          // Note: We don't call trackSaveEnd on error - the timestamp will age out naturally
         }
       }, TIMING_CONFIG.BLUR_SAVE_DEBOUNCE_MS);
     };
@@ -382,7 +396,7 @@ function AppContent() {
         clearTimeout(blurTimeoutRef.current);
       }
     };
-  }, [trackSaveStart, trackSaveEnd]); // Include tracking functions (stable via useCallback)
+  }, [trackSaveStart]); // Include tracking function (stable via useCallback)
 
   // Clear blur timeout and warnings when file is closed to prevent stale saves and memory leaks
   useEffect(() => {
@@ -449,7 +463,9 @@ function AppContent() {
         // If active file was modified externally
         if (normalizedEventPath && normalizedActivePath && normalizedEventPath === normalizedActivePath) {
           // Skip if we're currently saving this specific file
-          if (currentActivePath && isSaveActive(currentActivePath)) {
+          // Use fileContent.filePath since that's what trackSaveStart uses
+          const currentFilePath = currentFileContent.filePath;
+          if (currentFilePath && isSaveActive(currentFilePath)) {
             // This is likely our own save, ignore it
             return;
           }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EditorContent } from '@tiptap/react';
-import { useEditor } from '../../hooks/useEditor';
+import { useEditor, hashString } from '../../hooks/useEditor';
 import { EditorToolbar } from './EditorToolbar';
 import { LinkPopover } from './LinkPopover';
 import { MarkdownEditor } from './MarkdownEditor';
@@ -229,13 +229,22 @@ export const EditorComponent = ({
       }
       // Content changed while in WYSIWYG mode: sync to editor
       else if (viewMode === 'wysiwyg' && hasContentChanged) {
-        try {
-          const json = markdownToJSON(content);
-          editor.commands.setContent(json);
-        } catch (error) {
-          console.error('Failed to convert markdown to JSON:', error);
-          // Fallback: set as plain text to prevent complete failure
-          editor.commands.setContent(content);
+        // Check if editor's current content already matches new content to avoid cursor jumps
+        // This happens during auto-save when originalContent is updated but content hasn't changed
+        const currentEditorMarkdown = editor.storage.markdown?.getMarkdown?.() || editor.getHTML();
+        const currentHash = hashString(currentEditorMarkdown);
+        const newHash = hashString(content);
+
+        // Only call setContent if content is actually different
+        if (currentHash !== newHash) {
+          try {
+            const json = markdownToJSON(content);
+            editor.commands.setContent(json);
+          } catch (error) {
+            console.error('Failed to convert markdown to JSON:', error);
+            // Fallback: set as plain text to prevent complete failure
+            editor.commands.setContent(content);
+          }
         }
       }
     }
