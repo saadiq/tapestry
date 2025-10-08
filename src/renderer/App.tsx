@@ -120,6 +120,8 @@ function AppContent() {
     rootPath,
     setFileDirty,
     nodes,
+    createFile,
+    error: fileTreeError,
   } = useFileTreeContext();
   const toast = useToast();
   const [wordCount, setWordCount] = useState(0);
@@ -236,8 +238,64 @@ function AppContent() {
   }, [loadDirectory, toast]);
 
   const handleNewFile = useCallback(() => {
-    // New file is handled via file tree context menu
-    console.log('New file: Use context menu in file tree');
+    // Can only create files when a folder is open
+    if (!rootPath) {
+      toast.showWarning('Please open a folder first');
+      return;
+    }
+
+    // Open the new file modal
+    setNewFileModal({ isOpen: true });
+  }, [rootPath, toast]);
+
+  const handleNewFileConfirm = useCallback(async (fileName: string) => {
+    if (!rootPath) {
+      toast.showError('No folder is open');
+      setNewFileModal({ isOpen: false });
+      return;
+    }
+
+    // Security: Prevent path traversal attacks
+    if (fileName.includes('/') || fileName.includes('\\') || fileName.includes('..')) {
+      toast.showError('Filename cannot contain path separators or ".."');
+      setNewFileModal({ isOpen: false });
+      return;
+    }
+
+    try {
+      // Close modal immediately for better UX
+      setNewFileModal({ isOpen: false });
+
+      // Create file in root directory using file tree context
+      // Note: createFile handles adding .md extension internally
+      const success = await createFile(rootPath, fileName);
+
+      if (!success) {
+        // Use detailed error from FileTreeContext instead of generic message
+        toast.showError(fileTreeError || 'Failed to create file');
+        return;
+      }
+
+      // Build the full path to the new file for opening in editor
+      // We must normalize extension here because createFile doesn't return the path
+      // This duplication with createFile's internal logic is acceptable (YAGNI)
+      const normalizedFileName = fileName.endsWith('.md') ? fileName : `${fileName}.md`;
+      // Use forward slash - works cross-platform, Node.js normalizes in main process
+      const newFilePath = `${rootPath}/${normalizedFileName}`;
+
+      // Open the newly created file in the editor
+      setActiveFile(newFilePath);
+
+      // Show success notification
+      toast.showSuccess(`File "${normalizedFileName}" created successfully`);
+    } catch (error) {
+      console.error('Error creating file:', error);
+      toast.showError(`Failed to create file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, [rootPath, createFile, setActiveFile, toast, fileTreeError]);
+
+  const handleNewFileCancel = useCallback(() => {
+    setNewFileModal({ isOpen: false });
   }, []);
 
   const handleToggleSidebar = useCallback(() => {

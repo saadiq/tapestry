@@ -155,7 +155,7 @@ import { FileText, FolderOpen } from 'lucide-react';
 ## Implementation Status
 
 - ✅ **Phase 1**: Add Modal State to App Component - COMPLETED
-- ⏳ **Phase 2**: Implement New File Handler Logic (with security validation) - NOT STARTED
+- ✅ **Phase 2**: Implement New File Handler Logic (with security validation) - COMPLETED
 - ⏳ **Phase 3**: Wire Up Modal UI - NOT STARTED
 - ⏳ **Phase 4**: Add Unit Tests (including security tests) - NOT STARTED
 - ⏳ **Phase 5**: Manual Testing & Documentation - NOT STARTED
@@ -247,7 +247,7 @@ This phase replaces the placeholder `handleNewFile` function with real logic tha
 
 #### Task 2.1: Update handleNewFile to open the modal
 
-**Status**: ⏳ Not started
+**Status**: ✅ Completed
 
 **Description**: Replace the console.log placeholder in `handleNewFile` with code that opens the modal. Also add a guard to ensure we only open the modal when a folder is open.
 
@@ -325,7 +325,7 @@ Part of new-file-button implementation.
 
 #### Task 2.2: Implement modal confirm handler
 
-**Status**: ⏳ Not started
+**Status**: ✅ Completed
 
 **Description**: Create a new function `handleNewFileConfirm` that gets called when the user submits the modal. This function will create the file, open it in the editor, and show success/error toasts.
 
@@ -484,7 +484,7 @@ Part of new-file-button implementation.
 
 #### Task 2.3: Implement modal cancel handler
 
-**Status**: ⏳ Not started
+**Status**: ✅ Completed
 
 **Description**: Create a simple function to close the modal when the user clicks "Cancel" or presses Escape.
 
