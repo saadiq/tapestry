@@ -116,6 +116,32 @@ src/renderer/components/
 └── ErrorBoundary.tsx    # React error boundary for graceful error handling
 ```
 
+### File Tree Features
+
+**Context Menu:**
+- Right-click any file/folder to access context menu
+- Available actions:
+  - New File / New Folder (directories only)
+  - Rename (via modal)
+  - Delete (with confirmation)
+  - Refresh directory tree
+  - Reveal in Finder/Explorer (opens system file manager)
+
+**Inline Rename:**
+- Single-click a file to open it (makes it active)
+- Double-click the active file's name in the tree to enter rename mode
+- Edit name directly in place
+- Submit: Enter key or click outside (blur)
+- Cancel: Escape key
+- Validation: prevents empty names, ignores unchanged names
+- Note: Only works for files, not directories
+
+**Modal Rename:**
+- Alternative to inline rename
+- Right-click → "Rename"
+- Input dialog with Cancel/Rename buttons
+- Modal does not close on backdrop click (prevents accidental dismissal)
+
 ### TipTap Editor Integration
 
 The editor supports two view modes:

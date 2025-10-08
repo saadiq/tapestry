@@ -1200,16 +1200,39 @@ Closes #[issue-number]
 ## Success Criteria
 
 **Feature complete when:**
-1. ✅ Right-click → Reveal in Finder → System file manager opens
-2. ✅ Right-click → Rename → Modal stays open when clicking input
-3. ✅ Double-click active file → Inline rename works
-4. ✅ Enter/Escape/Blur handle rename correctly
-5. ✅ All tests pass (`bun test`)
-6. ✅ No linting errors (`bun run lint`)
-7. ✅ Documentation updated
-8. ✅ Manual testing checklist complete
-9. ✅ No console errors in DevTools
-10. ✅ No regressions in existing features
+1. ✅ Right-click → Reveal in Finder → System file manager opens (Tasks 1-3: COMPLETED)
+2. ✅ Right-click → Rename → Modal stays open when clicking input (Task 4: COMPLETED)
+3. ✅ Double-click active file → Inline rename works (Tasks 5-8: COMPLETED)
+4. ✅ Enter/Escape/Blur handle rename correctly (Tasks 5-8: COMPLETED)
+5. ✅ All tests pass (`bun test`) (Task 9: COMPLETED - 229 tests pass, 11 new inline rename tests)
+6. ⚠️  No linting errors (`bun run lint`) (Task 11: SKIPPED - ESLint config conflict with parent directory)
+7. ✅ Documentation updated (Task 10: COMPLETED - CLAUDE.md and README.md updated)
+8. ⏳ Manual testing checklist complete (Task 11: PENDING - awaiting manual verification)
+9. ⏳ No console errors in DevTools (Task 11: PENDING - awaiting manual verification)
+10. ⏳ No regressions in existing features (Task 11: PENDING - awaiting manual verification)
+
+## Implementation Status
+
+**Tasks 1-8:** ✅ COMPLETED (implemented in previous session)
+- Task 1: IPC handler for reveal in file manager
+- Task 2: Preload API for showItemInFolder
+- Task 3: UI connection for reveal in finder
+- Task 4: Fixed rename modal backdrop dismissal
+- Task 5: Added inline rename state to FileTreeItem
+- Task 6: Double-click handler implementation
+- Task 7: Submit/cancel logic for inline rename
+- Task 8: Connected to parent component
+
+**Tasks 9-11:** ✅ MOSTLY COMPLETED (current session)
+- Task 9: ✅ Unit tests created (11 tests, all passing)
+- Task 10: ✅ Documentation updated
+- Task 11: ⚠️ Automated tests pass, manual testing pending
+
+**Next Steps:**
+1. Run `bun start` and perform manual testing checklist
+2. Verify no console errors in DevTools
+3. Test all features end-to-end
+4. Commit changes if manual testing passes
 
 ## Notes for Future Enhancements
 
