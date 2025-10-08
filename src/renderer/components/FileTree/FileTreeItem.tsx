@@ -99,10 +99,11 @@ export function FileTreeItem({
   useEffect(() => {
     if (isRenaming && inputRef.current) {
       inputRef.current.focus();
-      // Select all text for easy replacement
-      inputRef.current.select();
+      // Position cursor at end of text to allow arrow key navigation
+      const length = editValue.length;
+      inputRef.current.setSelectionRange(length, length);
     }
-  }, [isRenaming]);
+  }, [isRenaming, editValue.length]);
 
   // Get appropriate icon based on node type and state
   const getIcon = () => {
