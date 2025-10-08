@@ -153,8 +153,8 @@ export const EditorComponent = ({
   onUpdateRef.current = onUpdate;
   onContentLoadedRef.current = onContentLoaded;
 
-  // Ref to track if we're in the middle of a user edit (prevents circular updates)
-  const isUserEditingRef = useRef(false);
+  // Track the last content that originated from the editor to prevent circular updates
+  const lastEditorContentRef = useRef<string>('');
 
   // Create a wrapped onUpdate that tracks WYSIWYG edits
   const wrappedOnUpdate = useCallback((newContent: string) => {
@@ -163,13 +163,9 @@ export const EditorComponent = ({
       hasWysiwygEditsRef.current = true;
     }
 
-    // Mark that we're processing a user edit to prevent useEffect from calling setContent
-    isUserEditingRef.current = true;
+    // Store this content as coming from the editor - don't sync it back
+    lastEditorContentRef.current = newContent;
     onUpdateRef.current?.(newContent);
-    // Reset flag after a brief delay to allow React state updates to propagate
-    setTimeout(() => {
-      isUserEditingRef.current = false;
-    }, 10);
   }, []);
 
   // Create a wrapped onContentLoaded that is conditional on view mode
@@ -237,10 +233,10 @@ export const EditorComponent = ({
       return;
     }
 
-    // Don't sync content back to editor if change came from user typing
+    // Don't sync content back to editor if the content change originated from the editor itself
     // This prevents circular updates: user types → onUpdate → parent state → useEffect → setContent
-    if (isUserEditingRef.current && viewMode === 'wysiwyg' && hasContentChanged) {
-      console.log('[EditorComponent] EARLY RETURN - User is editing, skipping setContent');
+    if (viewMode === 'wysiwyg' && hasContentChanged && content === lastEditorContentRef.current) {
+      console.log('[EditorComponent] EARLY RETURN - Content came from editor, skipping setContent');
       // Update refs to track that we processed this content change
       prevViewModeRef.current = viewMode;
       prevContentRef.current = content;
