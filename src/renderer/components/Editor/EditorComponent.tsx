@@ -207,6 +207,14 @@ export const EditorComponent = ({
       selfTriggeredChangeRef.current = false;
     }
 
+    // Don't sync content if nothing has changed - prevents cursor jumps from spurious re-renders
+    if (!editor || !content || (!isViewModeTransition && !hasContentChanged)) {
+      // Update refs even if we skip sync
+      prevViewModeRef.current = viewMode;
+      prevContentRef.current = content;
+      return;
+    }
+
     if (editor && content) {
       // Switching from markdown → WYSIWYG: always sync to editor
       if (viewMode === 'wysiwyg' && prevViewModeRef.current === 'markdown') {

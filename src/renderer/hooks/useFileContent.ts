@@ -327,6 +327,9 @@ export function useFileContent(
             // Manually trigger save by updating state and calling writeFile
             // We can't use saveFile() here because it reads from state closure
             const saveNow = async () => {
+              // Call before save callback to track save start
+              onBeforeSave?.();
+
               setState((prev) => ({ ...prev, saving: true, error: null }));
 
               try {
@@ -367,7 +370,7 @@ export function useFileContent(
         }, autoSaveDelay);
       }
     },
-    [enableAutoSave, autoSaveDelay, clearAutoSaveTimer, onAfterSave]
+    [enableAutoSave, autoSaveDelay, clearAutoSaveTimer, onBeforeSave, onAfterSave]
   );
 
   /**
