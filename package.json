@@ -16,7 +16,9 @@
     "lint": "eslint --ext .ts,.tsx .",
     "test": "bun test",
     "test:ui": "bun test --ui",
-    "test:coverage": "bun test --coverage"
+    "test:coverage": "bun test --coverage",
+    "verify-icons": "bash scripts/verify-icons.sh",
+    "regenerate-icons": "bash scripts/regenerate-icons.sh"
   },
   "keywords": [],
   "author": {
