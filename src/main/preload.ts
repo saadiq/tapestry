@@ -18,9 +18,13 @@ import type {
 } from '../shared/types/fileSystem';
 
 // WeakMaps to store IPC wrapper functions for cleanup
+// eslint-disable-next-line @typescript-eslint/ban-types
 const fileChangeWrappers = new WeakMap<Function, Function>();
+// eslint-disable-next-line @typescript-eslint/ban-types
 const updateAvailableWrappers = new WeakMap<Function, Function>();
+// eslint-disable-next-line @typescript-eslint/ban-types
 const updateDownloadedWrappers = new WeakMap<Function, Function>();
+// eslint-disable-next-line @typescript-eslint/ban-types
 const updateStatusWrappers = new WeakMap<Function, Function>();
 
 // Expose protected methods that allow the renderer process to use
