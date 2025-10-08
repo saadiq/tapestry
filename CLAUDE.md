@@ -317,6 +317,33 @@ Reusable modal components follow this pattern:
 4. `onConfirm` callback receives validated input
 5. Parent performs operation and closes modal
 
+### File Creation Workflow
+
+Files can be created in two ways:
+
+1. **TitleBar "New File" button** (implemented in `App.tsx`):
+   - Keyboard shortcut: `Cmd+N` (Mac) or `Ctrl+N` (Windows/Linux)
+   - Menu: File → New File
+   - Creates file in **root directory** of currently open folder
+   - Opens modal (`InputModal`) for filename input
+   - Automatically appends `.md` extension if not provided
+   - Automatically opens new file in editor after creation
+   - Shows warning toast if no folder is open
+   - **Security**: Validates filenames to prevent path traversal (rejects `/`, `\`, `..`)
+   - Shows detailed error messages from `FileTreeContext` (e.g., "File already exists")
+
+2. **File tree context menu** (right-click on folder):
+   - Right-click on any folder in the file tree
+   - Select "New File" from context menu
+   - Creates file in the **selected folder** (not root)
+   - Same modal workflow and validation as button
+
+**Implementation notes**:
+- Both methods use `createFile` from `FileTreeProvider` context
+- Modal state is controlled by parent component (`App` or `FileTree`)
+- File creation automatically refreshes the file tree via context state updates
+- Extension normalization happens in both `createFile` and caller (minimal acceptable duplication for path construction)
+
 ## UI Framework
 
 - **Tailwind CSS v4** - Utility-first styling (use `@import "tailwindcss"` in CSS)
@@ -334,6 +361,7 @@ Theme switching: `useTheme` hook manages DaisyUI theme via `data-theme` attribut
 - **Markdown-only filter** - Directory reading automatically filters for `.md` files
 - **Auto `.md` extension** - File creation automatically appends `.md` if missing
 - **Keyboard shortcuts**:
+  - `Cmd/Ctrl + N` - Create new file in root directory
   - `Cmd/Ctrl + K` - Open link popover (WYSIWYG mode only)
   - `Cmd/Ctrl + E` - Toggle inline code (WYSIWYG mode only)
 - **Markdown normalization** - In markdown mode, content is normalized through markdown-it/turndown pipeline on blur to ensure consistency with WYSIWYG mode

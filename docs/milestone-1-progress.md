@@ -131,7 +131,9 @@
 - ✅ **Can open directory** - File dialog works, loads real directory structure
 - ✅ **File tree shows structure** - Recursive directory reading with markdown file filtering
 - ✅ **WYSIWYG markdown editor** - TipTap editor with full toolbar
-- ✅ **Create files** - Context menu → New File → Input modal → IPC call
+- ✅ **Create files** - Two methods:
+  - Context menu (right-click folder) → New File → Input modal → IPC call (creates in selected folder)
+  - TitleBar button (Cmd+N) → Input modal → IPC call (creates in root directory)
 - ✅ **Open files** - Click file in tree → loads into editor
 - ✅ **Save files** - Manual save (Cmd+S) + auto-save (1s delay)
 - ✅ **Delete files** - Context menu → confirmation → IPC call
@@ -186,7 +188,7 @@
 - ✅ Loading states
 - ✅ Error feedback via toast notifications
 - ✅ Confirmation dialogs for destructive actions
-- ✅ Keyboard shortcuts
+- ✅ Keyboard shortcuts (Cmd+N for new file, Cmd+S for save, Cmd+O for open folder, Cmd+B for toggle sidebar)
 - ✅ Auto-save functionality
 - ✅ File watcher for external changes
 
@@ -223,6 +225,15 @@
 - Git history is clean with descriptive commit messages
 - No bugs or crashes detected during development
 - Ready for real-world testing
+
+**Recent Enhancement:**
+- ✅ **TitleBar "New File" Button** (2025-10-08)
+  - Made previously placeholder button fully functional
+  - Opens modal for filename input with validation
+  - Creates files in root directory (complements file tree context menu which creates in selected folder)
+  - Includes path traversal security validation (rejects `/`, `\`, `..`)
+  - Auto-opens newly created file in editor
+  - Shows detailed error messages from FileTreeContext
 
 ---
 
