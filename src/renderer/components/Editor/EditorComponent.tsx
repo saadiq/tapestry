@@ -193,9 +193,18 @@ export const EditorComponent = ({
     const isViewModeTransition = viewMode !== prevViewModeRef.current;
     const hasContentChanged = content !== prevContentRef.current;
 
+    console.log('[EditorComponent] useEffect triggered');
+    console.log('[EditorComponent]   isViewModeTransition:', isViewModeTransition);
+    console.log('[EditorComponent]   hasContentChanged:', hasContentChanged);
+    console.log('[EditorComponent]   viewMode:', viewMode);
+    console.log('[EditorComponent]   prevViewMode:', prevViewModeRef.current);
+    console.log('[EditorComponent]   content length:', content?.length || 0);
+    console.log('[EditorComponent]   prev content length:', prevContentRef.current?.length || 0);
+
     // When content changes from parent, reset edit tracking and store new raw content
     // ONLY if this is NOT a self-triggered change from normalization
     if (hasContentChanged) {
+      console.log('[EditorComponent] Content changed, resetting edit tracking');
       hasWysiwygEditsRef.current = false;
 
       if (!selfTriggeredChangeRef.current) {
@@ -209,21 +218,31 @@ export const EditorComponent = ({
 
     // Don't sync content if nothing has changed - prevents cursor jumps from spurious re-renders
     if (!editor || !content || (!isViewModeTransition && !hasContentChanged)) {
+      console.log('[EditorComponent] EARLY RETURN - No sync needed');
+      console.log('[EditorComponent]   editor:', !!editor);
+      console.log('[EditorComponent]   content:', !!content);
       // Update refs even if we skip sync
       prevViewModeRef.current = viewMode;
       prevContentRef.current = content;
       return;
     }
 
+    console.log('[EditorComponent] Proceeding with content sync...');
+
     if (editor && content) {
       // Switching from markdown → WYSIWYG: always sync to editor
       if (viewMode === 'wysiwyg' && prevViewModeRef.current === 'markdown') {
+        console.log('[EditorComponent] Syncing markdown → WYSIWYG');
         try {
           const json = markdownToJSON(content);
+          console.log('[EditorComponent] CALLING setContent (markdown→WYSIWYG)');
+          console.trace();
           editor.commands.setContent(json);
         } catch (error) {
           console.error('Failed to convert markdown to JSON:', error);
           // Fallback: set as plain text to prevent complete failure
+          console.log('[EditorComponent] CALLING setContent (fallback, markdown→WYSIWYG)');
+          console.trace();
           editor.commands.setContent(content);
         }
       }
@@ -237,22 +256,33 @@ export const EditorComponent = ({
       }
       // Content changed while in WYSIWYG mode: sync to editor
       else if (viewMode === 'wysiwyg' && hasContentChanged) {
+        console.log('[EditorComponent] Content changed in WYSIWYG mode');
         // Check if editor's current content already matches new content to avoid cursor jumps
         // This happens during auto-save when originalContent is updated but content hasn't changed
         const currentEditorMarkdown = editor.storage.markdown?.getMarkdown?.() || editor.getHTML();
         const currentHash = hashString(currentEditorMarkdown);
         const newHash = hashString(content);
 
+        console.log('[EditorComponent]   Current editor hash:', currentHash);
+        console.log('[EditorComponent]   New content hash:', newHash);
+
         // Only call setContent if content is actually different
         if (currentHash !== newHash) {
+          console.log('[EditorComponent] Hashes differ, syncing editor content');
           try {
             const json = markdownToJSON(content);
+            console.log('[EditorComponent] CALLING setContent (WYSIWYG content change)');
+            console.trace();
             editor.commands.setContent(json);
           } catch (error) {
             console.error('Failed to convert markdown to JSON:', error);
             // Fallback: set as plain text to prevent complete failure
+            console.log('[EditorComponent] CALLING setContent (fallback, WYSIWYG content change)');
+            console.trace();
             editor.commands.setContent(content);
           }
+        } else {
+          console.log('[EditorComponent] Hashes match, skipping setContent');
         }
       }
     }

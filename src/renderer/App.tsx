@@ -87,10 +87,16 @@ function AppContent() {
     const normalizedPath = normalizePath(filePath);
     const now = Date.now();
 
+    console.log('[SaveTracking] trackSaveStart called');
+    console.log('[SaveTracking]   File path:', filePath);
+    console.log('[SaveTracking]   Normalized:', normalizedPath);
+    console.log('[SaveTracking]   Timestamp:', now);
+
     // Only perform eager cleanup if map is getting large
     // This optimizes performance for normal usage while preventing memory leaks
     if (activeSavesRef.current.size > TIMING_CONFIG.SAVE_TRACKING_CLEANUP_THRESHOLD) {
       const maxAge = 5000; // 5 seconds
+      console.log('[SaveTracking] Running eager cleanup, map size:', activeSavesRef.current.size);
       for (const [path, timestamp] of activeSavesRef.current.entries()) {
         if (now - timestamp > maxAge) {
           activeSavesRef.current.delete(path);
@@ -99,6 +105,7 @@ function AppContent() {
     }
 
     activeSavesRef.current.set(normalizedPath, now);
+    console.log('[SaveTracking] Timestamp stored, map size now:', activeSavesRef.current.size);
   }, []);
 
   /**
@@ -108,19 +115,36 @@ function AppContent() {
   const isSaveActive = useCallback((filePath: string): boolean => {
     const normalizedPath = normalizePath(filePath);
     const saveTimestamp = activeSavesRef.current.get(normalizedPath);
+    const now = Date.now();
+
+    console.log('[SaveTracking] isSaveActive check');
+    console.log('[SaveTracking]   File path:', filePath);
+    console.log('[SaveTracking]   Normalized:', normalizedPath);
+    console.log('[SaveTracking]   Timestamp:', saveTimestamp || 'NOT FOUND');
 
     if (!saveTimestamp) {
+      console.log('[SaveTracking]   Result: FALSE (no timestamp)');
       return false;
     }
 
-    return Date.now() - saveTimestamp < TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS;
+    const age = now - saveTimestamp;
+    const isActive = age < TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS;
+    console.log('[SaveTracking]   Age:', age, 'ms');
+    console.log('[SaveTracking]   Debounce window:', TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS, 'ms');
+    console.log('[SaveTracking]   Result:', isActive ? 'TRUE (within window)' : 'FALSE (too old)');
+
+    return isActive;
   }, []);
 
   // Save lifecycle callbacks to track save state per file
   const handleBeforeSave = useCallback(() => {
+    console.log('[SaveTracking] handleBeforeSave called');
     const currentPath = currentFilePathRef.current;
+    console.log('[SaveTracking]   Current file path:', currentPath || 'NULL');
     if (currentPath) {
       trackSaveStart(currentPath);
+    } else {
+      console.warn('[SaveTracking] No current file path, skipping trackSaveStart');
     }
   }, [trackSaveStart]);
 
@@ -174,16 +198,28 @@ function AppContent() {
   }, [fileContent]);
 
   const handleContentLoaded = useCallback((convertedContent: string) => {
+    console.log('[App] handleContentLoaded called');
+    console.log('[App]   Converted content length:', convertedContent.length);
+    console.log('[App]   Current content length:', fileContent.content.length);
+    console.log('[App]   isDirty:', fileContent.isDirty);
+
     // Only update content and originalContent when file is not dirty
     if (!fileContent.isDirty) {
+      console.log('[App] File is clean, updating originalContent');
       fileContent.updateOriginalContent(convertedContent);
 
       // Only update content if it's actually different to prevent cursor jumps
       // This happens during auto-save: file becomes clean, editor fires onContentLoaded,
       // but content hasn't changed - updating it would reset cursor position
       if (fileContent.content !== convertedContent) {
+        console.log('[App] Content differs, calling updateContent (THIS WILL CAUSE CURSOR JUMP!)');
+        console.trace();
         fileContent.updateContent(convertedContent);
+      } else {
+        console.log('[App] Content is same, skipping updateContent');
       }
+    } else {
+      console.log('[App] File is dirty, skipping all updates');
     }
   }, [fileContent]);
 
@@ -452,6 +488,9 @@ function AppContent() {
 
     const handleFileChange = async (event?: FileWatcherEvent) => {
       try {
+        console.log('[FileWatcher] File change event received');
+        console.log('[FileWatcher]   Event path:', event?.path || 'NONE');
+
         // Use refs to get latest values without causing effect re-runs
         const currentActivePath = activePathRef.current;
         const currentFileContent = fileContentRef.current;
@@ -459,16 +498,25 @@ function AppContent() {
 
         // Normalize event path for cross-platform comparison (Windows vs Unix)
         const normalizedEventPath = event?.path ? normalizePath(event.path) : null;
+        console.log('[FileWatcher]   Normalized event path:', normalizedEventPath || 'NONE');
+        console.log('[FileWatcher]   Active path:', normalizedActivePath || 'NONE');
 
         // If active file was modified externally
         if (normalizedEventPath && normalizedActivePath && normalizedEventPath === normalizedActivePath) {
+          console.log('[FileWatcher] Active file was modified!');
+
           // Skip if we're currently saving this specific file
           // Use fileContent.filePath since that's what trackSaveStart uses
           const currentFilePath = currentFileContent.filePath;
+          console.log('[FileWatcher]   Current file path:', currentFilePath || 'NULL');
+
           if (currentFilePath && isSaveActive(currentFilePath)) {
             // This is likely our own save, ignore it
+            console.log('[FileWatcher] IGNORED - Save is active for this file');
             return;
           }
+
+          console.log('[FileWatcher] NOT IGNORED - Will check for external changes');
 
           if (currentFileContent.isDirty) {
             currentToast.showWarning(
