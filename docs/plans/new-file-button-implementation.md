@@ -157,7 +157,7 @@ import { FileText, FolderOpen } from 'lucide-react';
 - ✅ **Phase 1**: Add Modal State to App Component - COMPLETED
 - ✅ **Phase 2**: Implement New File Handler Logic (with security validation) - COMPLETED
 - ✅ **Phase 3**: Wire Up Modal UI - COMPLETED
-- ⏳ **Phase 4**: Add Unit Tests (including security tests) - NOT STARTED
+- ✅ **Phase 4**: Add Unit Tests (including security tests) - COMPLETED
 - ⏳ **Phase 5**: Manual Testing & Documentation - NOT STARTED
 
 ## Implementation Tasks
@@ -705,7 +705,7 @@ This phase ensures the new functionality is covered by automated tests. We follo
 
 #### Task 4.1: Create test file structure
 
-**Status**: ⏳ Not started
+**Status**: ✅ Completed
 
 **Description**: Create a new test file for the new file creation functionality. We'll add it to the existing tests directory following the project's test organization.
 
@@ -805,7 +805,7 @@ Part of new-file-button implementation.
 
 #### Task 4.2: Write test for "no folder open" warning
 
-**Status**: ⏳ Not started
+**Status**: ✅ Completed
 
 **Description**: Write a test that verifies a warning toast appears when clicking "New File" button without a folder open.
 
@@ -889,7 +889,7 @@ Part of new-file-button implementation.
 
 #### Task 4.3: Write test for successful file creation
 
-**Status**: ⏳ Not started
+**Status**: ✅ Completed
 
 **Description**: Write a test that verifies the complete happy path: opening a folder, clicking New File, entering a filename, and seeing the file created and opened.
 
@@ -1041,7 +1041,7 @@ Part of new-file-button implementation.
 
 #### Task 4.4: Write test for modal cancel behavior
 
-**Status**: ⏳ Not started
+**Status**: ✅ Completed
 
 **Description**: Write a test that verifies clicking Cancel closes the modal without creating a file.
 
@@ -1135,7 +1135,7 @@ Part of new-file-button implementation.
 
 #### Task 4.5: Add test for keyboard shortcut
 
-**Status**: ⏳ Not started
+**Status**: ✅ Completed
 
 **Description**: Write a test that verifies the Cmd+N (or Ctrl+N) keyboard shortcut opens the new file modal.
 
@@ -1226,7 +1226,7 @@ Part of new-file-button implementation.
 
 #### Task 4.6: Add test for security validation
 
-**Status**: ⏳ Not started
+**Status**: ✅ Completed
 
 **Description**: Write tests that verify path traversal attempts are blocked by the security validation.
 
