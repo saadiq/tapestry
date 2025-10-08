@@ -15,9 +15,8 @@ export default defineConfig({
         'electron',
         ...builtinModules,
         ...builtinModules.map((m) => `node:${m}`),
-        // Temporarily removed for v0.0.2 - auto-updater disabled
-        // 'electron-updater',
-        // 'electron-log',
+        'electron-updater',
+        'electron-log',
       ],
     },
   },

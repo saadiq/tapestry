@@ -19,18 +19,15 @@ const config: ForgeConfig = {
   },
   hooks: {
     packageAfterCopy: async (_config, buildPath) => {
-      const fs = await import('fs-extra');
+      const { execSync } = await import('child_process');
       const path = await import('path');
 
-      // Copy external dependencies to the build
-      const deps = ['electron-updater', 'electron-log'];
-      const nodeModulesPath = path.join(buildPath, 'node_modules');
-
-      for (const dep of deps) {
-        const src = path.join(process.cwd(), 'node_modules', dep);
-        const dest = path.join(nodeModulesPath, dep);
-        await fs.copy(src, dest);
-      }
+      // Install only the external dependencies needed at runtime
+      console.log('Installing external dependencies...');
+      execSync('bun add --production electron-updater electron-log', {
+        cwd: buildPath,
+        stdio: 'inherit',
+      });
     },
   },
   rebuildConfig: {},
