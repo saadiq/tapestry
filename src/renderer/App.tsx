@@ -13,6 +13,7 @@ import { NoFileOpen } from './components/EmptyStates/NoFileOpen';
 import { ToastProvider, useToast } from './components/Notifications';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { UpdateNotification } from './components/UpdateNotification';
+import { InputModal } from './components/Modals/InputModal';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useFileContent } from './hooks/useFileContent';
@@ -593,6 +594,17 @@ function AppContent() {
           />
         )}
       </MainLayout>
+
+      {/* New File Modal */}
+      <InputModal
+        isOpen={newFileModal.isOpen}
+        title="New File"
+        message="Enter a name for the new file:"
+        placeholder="notes.md"
+        confirmText="Create"
+        onConfirm={handleNewFileConfirm}
+        onCancel={handleNewFileCancel}
+      />
 
       {/* Update notification - renders on top of everything */}
       <UpdateNotification />
