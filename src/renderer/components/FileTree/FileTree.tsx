@@ -368,6 +368,7 @@ export function FileTree() {
         confirmText="Create"
         onConfirm={handleNewFile}
         onCancel={() => setNewFileModal({ isOpen: false, parentPath: '' })}
+        validateFilename={true}
       />
 
       {/* New Folder Modal */}
@@ -379,6 +380,7 @@ export function FileTree() {
         confirmText="Create"
         onConfirm={handleNewFolder}
         onCancel={() => setNewFolderModal({ isOpen: false, parentPath: '' })}
+        validateFilename={true}
       />
 
       {/* Rename Modal */}
@@ -391,6 +393,7 @@ export function FileTree() {
         confirmText="Rename"
         onConfirm={handleRename}
         onCancel={() => setRenameModal({ isOpen: false, path: '', currentName: '' })}
+        validateFilename={true}
       />
 
       {/* Delete Confirmation Dialog */}

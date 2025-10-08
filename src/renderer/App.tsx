@@ -256,19 +256,13 @@ function AppContent() {
       return;
     }
 
-    // Security: Prevent path traversal attacks
-    if (fileName.includes('/') || fileName.includes('\\') || fileName.includes('..')) {
-      toast.showError('Filename cannot contain path separators or ".."');
-      setNewFileModal({ isOpen: false });
-      return;
-    }
-
     try {
       // Close modal immediately for better UX
       setNewFileModal({ isOpen: false });
 
       // Create file in root directory using file tree context
       // Note: createFile handles adding .md extension internally
+      // Validation is handled by InputModal with validateFilename prop
       const success = await createFile(rootPath, fileName);
 
       if (!success) {
@@ -615,6 +609,7 @@ function AppContent() {
         confirmText="Create"
         onConfirm={handleNewFileConfirm}
         onCancel={handleNewFileCancel}
+        validateFilename={true}
       />
 
       {/* Update notification - renders on top of everything */}
