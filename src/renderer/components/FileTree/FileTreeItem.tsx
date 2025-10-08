@@ -6,7 +6,8 @@
 import { ChevronRight, ChevronDown, File, Folder, FolderOpen, FileText } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import type { FileNode } from '../../../shared/types/fileTree';
-import { isValidFilename } from '../../utils/fileValidation';
+import { isValidFilename, getFilenameValidationError } from '../../utils/fileValidation';
+import { useToast } from '../Notifications/ToastContainer';
 
 interface FileTreeItemProps {
   node: FileNode;
@@ -35,6 +36,7 @@ export function FileTreeItem({
 }: FileTreeItemProps) {
   const isDirectory = node.type === 'directory';
   const hasChildren = isDirectory && node.children && node.children.length > 0;
+  const { showError } = useToast();
 
   const [isRenaming, setIsRenaming] = useState(false);
   const [editValue, setEditValue] = useState(node.name);
@@ -66,14 +68,30 @@ export function FileTreeItem({
   const handleRenameSubmit = () => {
     const trimmedValue = editValue.trim();
 
+    // Exit rename mode first
+    setIsRenaming(false);
+
     // Validate: not empty, different from current name, and filesystem-safe
-    if (trimmedValue && trimmedValue !== node.name && isValidFilename(trimmedValue)) {
-      onRename(node.path, trimmedValue);
+    if (!trimmedValue) {
+      setEditValue(node.name); // Reset to current name
+      return;
     }
 
-    // Exit rename mode regardless of whether we submitted
-    setIsRenaming(false);
-    setEditValue(node.name); // Reset to current name
+    if (trimmedValue === node.name) {
+      setEditValue(node.name); // Reset to current name
+      return; // No change, no error needed
+    }
+
+    if (!isValidFilename(trimmedValue)) {
+      const errorMessage = getFilenameValidationError(trimmedValue);
+      showError(errorMessage);
+      setEditValue(node.name); // Reset to current name
+      return;
+    }
+
+    // All validations passed, perform rename
+    onRename(node.path, trimmedValue);
+    setEditValue(trimmedValue); // Update to new name
   };
 
   const handleRenameCancel = () => {

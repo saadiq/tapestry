@@ -133,14 +133,15 @@ src/renderer/components/
 - Edit name directly in place
 - Submit: Enter key or click outside (blur)
 - Cancel: Escape key
-- Validation: prevents empty names, ignores unchanged names
+- Validation: prevents empty names, ignores unchanged names, rejects filesystem-unsafe characters
+- Invalid filenames show error toast with explanation
 - Note: Only works for files, not directories
 
 **Modal Rename:**
 - Alternative to inline rename
 - Right-click → "Rename"
 - Input dialog with Cancel/Rename buttons
-- Modal does not close on backdrop click (prevents accidental dismissal)
+- Clicking modal backdrop closes the modal (standard UX)
 
 ### TipTap Editor Integration
 
