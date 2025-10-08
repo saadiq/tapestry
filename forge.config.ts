@@ -16,6 +16,7 @@ const config: ForgeConfig = {
     name: 'Tapestry',
     appBundleId: 'com.saadiq.tapestry',
     appCategoryType: 'public.app-category.productivity',
+    icon: 'assets/icons/icon',
   },
   hooks: {
     packageAfterCopy: async (_config, buildPath) => {
@@ -34,8 +35,16 @@ const config: ForgeConfig = {
   makers: [
     new MakerSquirrel({}),
     new MakerZIP({}, ['darwin']),
-    new MakerRpm({}),
-    new MakerDeb({}),
+    new MakerRpm({
+      options: {
+        icon: 'assets/icons/icon.png',
+      },
+    }),
+    new MakerDeb({
+      options: {
+        icon: 'assets/icons/icon.png',
+      },
+    }),
   ],
   plugins: [
     new AutoUnpackNativesPlugin({}),
