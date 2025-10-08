@@ -11,7 +11,7 @@
  * - Security validation blocks path traversal attacks
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from '../App';
 
@@ -50,29 +50,24 @@ vi.mock('../components/Notifications/ToastContainer', () => ({
       const toast = document.createElement('div');
       toast.textContent = msg;
       document.body.appendChild(toast);
-      // Auto-remove after test assertions
-      setTimeout(() => toast.remove(), 100);
     },
     showSuccess: (msg: string) => {
       mockToastCalls.showSuccess(msg);
       const toast = document.createElement('div');
       toast.textContent = msg;
       document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 100);
     },
     showError: (msg: string) => {
       mockToastCalls.showError(msg);
       const toast = document.createElement('div');
       toast.textContent = msg;
       document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 100);
     },
     showInfo: (msg: string) => {
       mockToastCalls.showInfo(msg);
       const toast = document.createElement('div');
       toast.textContent = msg;
       document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 100);
     },
   }),
 }));
@@ -104,6 +99,11 @@ beforeEach(() => {
 
   // Setup window.electronAPI mock
   (window as any).electronAPI = mockElectronAPI;
+});
+
+afterEach(() => {
+  // Clean up any toast DOM elements created during tests
+  document.body.innerHTML = '';
 });
 
 describe('App - New File Button', () => {

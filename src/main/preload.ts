@@ -17,15 +17,21 @@ import type {
   FileWatcherEvent,
 } from '../shared/types/fileSystem';
 
+// Type definitions for IPC callback wrappers
+type FileChangeCallback = (event: FileWatcherEvent) => void;
+type IPCFileChangeWrapper = (_event: unknown, data: FileWatcherEvent) => void;
+
+type UpdateInfoCallback = (info: { version: string; releaseDate: string }) => void;
+type IPCUpdateInfoWrapper = (_event: unknown, info: { version: string; releaseDate: string }) => void;
+
+type UpdateStatusCallback = (status: string) => void;
+type IPCUpdateStatusWrapper = (_event: unknown, status: string) => void;
+
 // WeakMaps to store IPC wrapper functions for cleanup
-// eslint-disable-next-line @typescript-eslint/ban-types
-const fileChangeWrappers = new WeakMap<Function, Function>();
-// eslint-disable-next-line @typescript-eslint/ban-types
-const updateAvailableWrappers = new WeakMap<Function, Function>();
-// eslint-disable-next-line @typescript-eslint/ban-types
-const updateDownloadedWrappers = new WeakMap<Function, Function>();
-// eslint-disable-next-line @typescript-eslint/ban-types
-const updateStatusWrappers = new WeakMap<Function, Function>();
+const fileChangeWrappers = new WeakMap<FileChangeCallback, IPCFileChangeWrapper>();
+const updateAvailableWrappers = new WeakMap<UpdateInfoCallback, IPCUpdateInfoWrapper>();
+const updateDownloadedWrappers = new WeakMap<UpdateInfoCallback, IPCUpdateInfoWrapper>();
+const updateStatusWrappers = new WeakMap<UpdateStatusCallback, IPCUpdateStatusWrapper>();
 
 // Expose protected methods that allow the renderer process to use
 // ipcRenderer without exposing the entire object
