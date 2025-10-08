@@ -125,6 +125,11 @@ function AppContent() {
   const [wordCount, setWordCount] = useState(0);
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
 
+  // New file modal state
+  const [newFileModal, setNewFileModal] = useState<{ isOpen: boolean }>({
+    isOpen: false,
+  });
+
   // Track which large files we've shown blur warnings for
   const shownBlurWarningsRef = useRef(new Set<string>());
 
