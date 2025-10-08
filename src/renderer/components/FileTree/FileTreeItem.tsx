@@ -102,7 +102,7 @@ export function FileTreeItem({
       // Select all text for immediate replacement (standard file manager UX)
       inputRef.current.select();
     }
-  }, [isRenaming, editValue.length]);
+  }, [isRenaming]);
 
   // Get appropriate icon based on node type and state
   const getIcon = () => {

@@ -119,7 +119,7 @@ export function ContextMenu({ menuState, onClose, onAction }: ContextMenuProps) 
           <li>
             <a onClick={() => handleAction('reveal-in-finder')}>
               <Eye className="h-4 w-4" />
-              Reveal in Finder
+              Reveal in File Manager
             </a>
           </li>
         </ul>
