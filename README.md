@@ -99,6 +99,10 @@ bun package
 
 # Create installers
 bun make
+
+# Icon management
+bun run verify-icons      # Verify all icon files exist
+bun run regenerate-icons  # Regenerate icons from SVG
 ```
 
 ## Architecture
@@ -145,6 +149,32 @@ See [docs/vision.md](docs/vision.md) for the complete vision.
 ## Contributing
 
 Tapestry is in active development. Contributions are welcome! Please check out the [CLAUDE.md](CLAUDE.md) file for development guidelines and architecture details.
+
+### Icon Development
+
+The application icon is a gradient weave design representing tapestry threads. To modify or regenerate icons:
+
+**Prerequisites:**
+```bash
+# macOS
+brew install librsvg imagemagick
+
+# Linux
+sudo apt-get install librsvg2-bin imagemagick
+```
+
+**Workflow:**
+1. Edit the source SVG: `assets/icons/icon.svg`
+2. Regenerate all formats: `bun run regenerate-icons`
+3. Verify icons: `bun run verify-icons`
+
+The regeneration script creates:
+- `icon.icns` - macOS app icon (1024x1024 with retina sizes)
+- `icon.ico` - Windows installer icon (256x256 with multiple sizes)
+- `icon.png` - Linux icon (512x512)
+- Individual PNG files for each size (16, 32, 48, 64, 128, 256, 512, 1024)
+
+Icons are automatically verified during packaging to ensure all required files exist.
 
 ---
 

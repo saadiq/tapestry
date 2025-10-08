@@ -22,6 +22,21 @@ const config: ForgeConfig = {
     packageAfterCopy: async (_config, buildPath) => {
       const { execSync } = await import('child_process');
       const path = await import('path');
+      const fs = await import('fs');
+
+      // Verify icon files exist before packaging
+      const iconFiles = [
+        'assets/icons/icon.icns',
+        'assets/icons/icon.ico',
+        'assets/icons/icon.png',
+      ];
+      console.log('Verifying icon files...');
+      for (const iconPath of iconFiles) {
+        if (!fs.existsSync(iconPath)) {
+          throw new Error(`Missing icon file: ${iconPath}`);
+        }
+        console.log(`✓ Found ${iconPath}`);
+      }
 
       // Install only the external dependencies needed at runtime
       console.log('Installing external dependencies...');
@@ -33,7 +48,10 @@ const config: ForgeConfig = {
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({}),
+    new MakerSquirrel({
+      iconUrl: 'https://raw.githubusercontent.com/saadiq/tapestry/main/assets/icons/icon.ico',
+      setupIcon: 'assets/icons/icon.ico',
+    }),
     new MakerZIP({}, ['darwin']),
     new MakerRpm({
       options: {
