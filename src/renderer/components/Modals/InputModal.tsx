@@ -76,7 +76,7 @@ export function InputModal({
           </div>
         </form>
       </div>
-      <div className="modal-backdrop" onClick={handleCancel}></div>
+      <div className="modal-backdrop"></div>
     </div>
   );
 }

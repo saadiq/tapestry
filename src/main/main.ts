@@ -165,6 +165,20 @@ function registerIpcHandlers() {
     return fileWatcher.unwatchDirectory(dirPath);
   });
 
+  // Reveal file/folder in system file manager
+  ipcMain.handle('shell:showItemInFolder', async (_event, itemPath: string) => {
+    try {
+      shell.showItemInFolder(itemPath);
+      return { success: true };
+    } catch (error) {
+      console.error('[shell:showItemInFolder] Error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
   // Update operations
   ipcMain.handle('check-for-updates', async () => {
     checkForUpdates(false); // Not silent - show dialogs

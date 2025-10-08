@@ -83,6 +83,10 @@ const electronAPI: IElectronAPI = {
         fileChangeWrappers.delete(callback);
       }
     },
+
+    // Shell operations
+    showItemInFolder: (itemPath: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('shell:showItemInFolder', itemPath),
   },
 
   // Update APIs

@@ -116,7 +116,7 @@ export function FileTree() {
     });
   };
 
-  const handleContextMenuAction = (action: ContextMenuAction, path: string) => {
+  const handleContextMenuAction = async (action: ContextMenuAction, path: string) => {
     // Close context menu
     setContextMenu({
       isOpen: false,
@@ -148,10 +148,18 @@ export function FileTree() {
         setDeleteDialog({ isOpen: true, path, name });
         break;
       }
-      case 'reveal-in-finder':
-        // TODO: Implement reveal in Finder (requires shell command)
-        console.log('Reveal in Finder', path);
+      case 'reveal-in-finder': {
+        try {
+          const result = await window.electronAPI.fileSystem.showItemInFolder(path);
+          if (!result.success) {
+            toast.showError(result.error || 'Failed to reveal item in file manager');
+          }
+        } catch (error) {
+          console.error('Error revealing in finder:', error);
+          toast.showError('Failed to reveal item in file manager');
+        }
         break;
+      }
     }
   };
 
@@ -182,7 +190,17 @@ export function FileTree() {
     }
   };
 
+  const handleInlineRename = async (path: string, newName: string) => {
+    // Use existing rename function from context
+    await rename(path, newName);
+  };
+
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    // Don't intercept keyboard events when user is typing in an input
+    if (event.target instanceof HTMLInputElement) {
+      return;
+    }
+
     const currentIndex = flattenedNodes.findIndex((node) => node.path === selectedPath);
 
     if (currentIndex === -1) return;
@@ -315,6 +333,7 @@ export function FileTree() {
                     onSelect={selectFile}
                     onOpen={openFile}
                     onContextMenu={handleContextMenu}
+                    onRename={handleInlineRename}
                     isSelected={node.path === selectedPath}
                     isActive={node.path === activePath}
                     isDirty={dirtyPaths.has(node.path)}

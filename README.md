@@ -30,6 +30,12 @@ Tapestry solves this by providing a flexible, desktop-first workspace where you 
 - **Auto-save with dirty state tracking**: Never lose your work
 - **Real-time file watching**: See external changes immediately
 
+### File Management
+- **Context menu operations**: Right-click for create, rename, delete, refresh
+- **Inline rename**: Double-click active file to rename in place
+- **Reveal in Finder/Explorer**: Open system file manager at file location
+- **Keyboard navigation**: Arrow keys, Enter to open files
+
 ### Markdown Features
 - **Standard markdown syntax**: Headers, bold, italic, lists, links, images, code blocks
 - **GitHub Flavored Markdown**: Tables, strikethrough, task lists (coming soon)
