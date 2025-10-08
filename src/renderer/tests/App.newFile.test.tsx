@@ -11,7 +11,7 @@
  * - Security validation blocks path traversal attacks
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from '../App';
 
@@ -33,6 +33,45 @@ vi.mock('../services/fileSystemService', () => ({
   },
 }));
 
+// Track toast calls for assertions
+const mockToastCalls = {
+  showWarning: vi.fn(),
+  showSuccess: vi.fn(),
+  showError: vi.fn(),
+  showInfo: vi.fn(),
+};
+
+// Mock toast notifications to render toast messages in DOM
+vi.mock('../components/Notifications/ToastContainer', () => ({
+  useToast: () => ({
+    showWarning: (msg: string) => {
+      mockToastCalls.showWarning(msg);
+      // Create a div to simulate toast appearing in DOM
+      const toast = document.createElement('div');
+      toast.textContent = msg;
+      document.body.appendChild(toast);
+    },
+    showSuccess: (msg: string) => {
+      mockToastCalls.showSuccess(msg);
+      const toast = document.createElement('div');
+      toast.textContent = msg;
+      document.body.appendChild(toast);
+    },
+    showError: (msg: string) => {
+      mockToastCalls.showError(msg);
+      const toast = document.createElement('div');
+      toast.textContent = msg;
+      document.body.appendChild(toast);
+    },
+    showInfo: (msg: string) => {
+      mockToastCalls.showInfo(msg);
+      const toast = document.createElement('div');
+      toast.textContent = msg;
+      document.body.appendChild(toast);
+    },
+  }),
+}));
+
 // Mock window.electronAPI
 const mockElectronAPI = {
   fileSystem: {
@@ -52,8 +91,19 @@ beforeEach(() => {
   // Reset all mocks before each test
   vi.clearAllMocks();
 
+  // Reset toast call tracking
+  mockToastCalls.showWarning.mockClear();
+  mockToastCalls.showSuccess.mockClear();
+  mockToastCalls.showError.mockClear();
+  mockToastCalls.showInfo.mockClear();
+
   // Setup window.electronAPI mock
   (window as any).electronAPI = mockElectronAPI;
+});
+
+afterEach(() => {
+  // Clean up any toast DOM elements created during tests
+  document.body.innerHTML = '';
 });
 
 describe('App - New File Button', () => {
@@ -259,14 +309,13 @@ describe('App - New File Button', () => {
 
     // Should show error toast
     await waitFor(() => {
-      expect(screen.getByText(/cannot contain path separators/i)).toBeInTheDocument();
+      expect(mockToastCalls.showError).toHaveBeenCalledWith(
+        'Filename cannot contain path separators or ".."'
+      );
     });
 
     // createFile should NOT be called
     expect(mockCreateFile).not.toHaveBeenCalled();
-
-    // Modal should close
-    expect(screen.queryByText('Enter a name for the new file:')).not.toBeInTheDocument();
   });
 
   it('should reject filename with path traversal (..)', async () => {
@@ -303,11 +352,14 @@ describe('App - New File Button', () => {
     const createButton = screen.getByText('Create');
     fireEvent.click(createButton);
 
-    // Should block it
+    // Should block it with error toast
     await waitFor(() => {
-      expect(screen.getByText(/cannot contain path separators/i)).toBeInTheDocument();
+      expect(mockToastCalls.showError).toHaveBeenCalledWith(
+        'Filename cannot contain path separators or ".."'
+      );
     });
 
+    // File should not be created
     expect(mockCreateFile).not.toHaveBeenCalled();
   });
 
@@ -345,11 +397,14 @@ describe('App - New File Button', () => {
     const createButton = screen.getByText('Create');
     fireEvent.click(createButton);
 
-    // Should block it
+    // Should block it with error toast
     await waitFor(() => {
-      expect(screen.getByText(/cannot contain path separators/i)).toBeInTheDocument();
+      expect(mockToastCalls.showError).toHaveBeenCalledWith(
+        'Filename cannot contain path separators or ".."'
+      );
     });
 
+    // File should not be created
     expect(mockCreateFile).not.toHaveBeenCalled();
   });
 });

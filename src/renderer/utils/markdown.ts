@@ -502,7 +502,7 @@ function parseSimpleHTMLToJSON(html: string): JSONContent[] {
  * @param nodes - The DOM nodes to convert
  * @param depth - Current recursion depth
  */
-function domNodesToJSON(nodes: NodeListOf<ChildNode>, depth: number = 0): JSONContent[] {
+function domNodesToJSON(nodes: NodeListOf<ChildNode>, depth = 0): JSONContent[] {
   // Check if we're in a browser environment
   if (typeof Node === 'undefined') {
     return [];
@@ -562,7 +562,7 @@ const MAX_DOM_DEPTH = 100;
  * @param node - The DOM node to convert
  * @param depth - Current recursion depth (used to prevent stack overflow)
  */
-function domNodeToJSON(node: Node, depth: number = 0): JSONContent | JSONContent[] | null {
+function domNodeToJSON(node: Node, depth = 0): JSONContent | JSONContent[] | null {
   // Check if we're in a browser environment
   if (typeof Node === 'undefined') {
     return null;
