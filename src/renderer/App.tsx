@@ -13,6 +13,7 @@ import { NoFileOpen } from './components/EmptyStates/NoFileOpen';
 import { ToastProvider, useToast } from './components/Notifications';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { UpdateNotification } from './components/UpdateNotification';
+import { InputModal } from './components/Modals/InputModal';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useFileContent } from './hooks/useFileContent';
@@ -66,11 +67,11 @@ function stopSaveTrackingCleanup(): void {
  */
 function trackSaveStart(filePath: string): void {
   const normalizedPath = normalizePath(filePath);
+  const now = Date.now();
 
   // Only perform eager cleanup if map is getting large
   // This optimizes performance for normal usage while preventing memory leaks
   if (activeSaves.size > TIMING_CONFIG.SAVE_TRACKING_CLEANUP_THRESHOLD) {
-    const now = Date.now();
     const maxAge = 5000; // 5 seconds
     for (const [path, timestamp] of activeSaves.entries()) {
       if (now - timestamp > maxAge) {
@@ -98,16 +99,16 @@ function isSaveActive(filePath: string): boolean {
 }
 
 /**
- * Mark a save operation as complete and schedule cleanup
+ * Mark a save operation as complete
+ * Note: We don't delete from activeSaves here because:
+ * 1. isSaveActive() uses timestamp checking for debounce (not map presence)
+ * 2. Eager cleanup in trackSaveStart() handles rapid file switching
+ * 3. Periodic cleanup interval removes stale entries every 10s
+ * 4. Using setTimeout here caused race conditions with rapid successive saves
  */
 function trackSaveEnd(filePath: string): void {
-  const normalizedPath = normalizePath(filePath);
-
-  // Keep the save timestamp for debounce period to ignore file watcher events
-  // Cleanup happens eagerly in trackSaveStart and periodically via interval
-  setTimeout(() => {
-    activeSaves.delete(normalizedPath);
-  }, TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS);
+  // No-op: timestamp remains in map for isSaveActive() checking
+  // Cleanup happens via eager cleanup in trackSaveStart() and periodic interval
 }
 
 // Inner component that has access to FileTreeContext and Toast
@@ -120,10 +121,17 @@ function AppContent() {
     rootPath,
     setFileDirty,
     nodes,
+    createFile,
+    error: fileTreeError,
   } = useFileTreeContext();
   const toast = useToast();
   const [wordCount, setWordCount] = useState(0);
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
+
+  // New file modal state
+  const [newFileModal, setNewFileModal] = useState<{ isOpen: boolean }>({
+    isOpen: false,
+  });
 
   // Track which large files we've shown blur warnings for
   const shownBlurWarningsRef = useRef(new Set<string>());
@@ -231,8 +239,64 @@ function AppContent() {
   }, [loadDirectory, toast]);
 
   const handleNewFile = useCallback(() => {
-    // New file is handled via file tree context menu
-    console.log('New file: Use context menu in file tree');
+    // Can only create files when a folder is open
+    if (!rootPath) {
+      toast.showWarning('Please open a folder first');
+      return;
+    }
+
+    // Open the new file modal
+    setNewFileModal({ isOpen: true });
+  }, [rootPath, toast]);
+
+  const handleNewFileConfirm = useCallback(async (fileName: string) => {
+    if (!rootPath) {
+      toast.showError('No folder is open');
+      setNewFileModal({ isOpen: false });
+      return;
+    }
+
+    // Security: Prevent path traversal attacks
+    if (fileName.includes('/') || fileName.includes('\\') || fileName.includes('..')) {
+      toast.showError('Filename cannot contain path separators or ".."');
+      setNewFileModal({ isOpen: false });
+      return;
+    }
+
+    try {
+      // Close modal immediately for better UX
+      setNewFileModal({ isOpen: false });
+
+      // Create file in root directory using file tree context
+      // Note: createFile handles adding .md extension internally
+      const success = await createFile(rootPath, fileName);
+
+      if (!success) {
+        // Use detailed error from FileTreeContext instead of generic message
+        toast.showError(fileTreeError || 'Failed to create file');
+        return;
+      }
+
+      // Build the full path to the new file for opening in editor
+      // We must normalize extension here because createFile doesn't return the path
+      // This duplication with createFile's internal logic is acceptable (YAGNI)
+      const normalizedFileName = fileName.endsWith('.md') ? fileName : `${fileName}.md`;
+      // Use forward slash - works cross-platform, Node.js normalizes in main process
+      const newFilePath = `${rootPath}/${normalizedFileName}`;
+
+      // Open the newly created file in the editor
+      setActiveFile(newFilePath);
+
+      // Show success notification
+      toast.showSuccess(`File "${normalizedFileName}" created successfully`);
+    } catch (error) {
+      console.error('Error creating file:', error);
+      toast.showError(`Failed to create file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, [rootPath, createFile, setActiveFile, toast, fileTreeError]);
+
+  const handleNewFileCancel = useCallback(() => {
+    setNewFileModal({ isOpen: false });
   }, []);
 
   const handleToggleSidebar = useCallback(() => {
@@ -429,9 +493,20 @@ function AppContent() {
               'Save your changes to overwrite external modifications.'
             );
           } else {
-            // Reload file from disk
-            await currentFileContent.loadFile(currentActivePath);
-            currentToast.showInfo('File reloaded due to external changes');
+            // Before reloading, check if content actually changed
+            // This prevents unnecessary reloads from spurious file watcher events
+            const fileResult = await fileSystemService.readFile(currentActivePath);
+            if (!fileResult.success) {
+              console.warn('[File Watcher] Failed to read file for comparison:', fileResult.error);
+              return;
+            }
+
+            // Only reload if content differs from what's in the editor
+            if (fileResult.content !== currentFileContent.content) {
+              await currentFileContent.loadFile(currentActivePath);
+              currentToast.showInfo('File reloaded due to external changes');
+            }
+            // If content is the same, silently ignore (no reload, no toast)
           }
         }
 
@@ -530,6 +605,17 @@ function AppContent() {
           />
         )}
       </MainLayout>
+
+      {/* New File Modal */}
+      <InputModal
+        isOpen={newFileModal.isOpen}
+        title="New File"
+        message="Enter a name for the new file:"
+        placeholder="notes.md"
+        confirmText="Create"
+        onConfirm={handleNewFileConfirm}
+        onCancel={handleNewFileCancel}
+      />
 
       {/* Update notification - renders on top of everything */}
       <UpdateNotification />
