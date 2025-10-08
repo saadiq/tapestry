@@ -29,6 +29,7 @@ interface UseFileContentOptions {
   saveTimeout?: number; // Timeout in milliseconds for save operations (default: 30000ms / 30s)
   onBeforeSave?: () => void; // Called before save starts (both auto and manual)
   onAfterSave?: (success: boolean) => void; // Called after save completes (both auto and manual)
+  onError?: (error: string, fileName: string) => void; // Called when auto-save fails
 }
 
 interface UseFileContentReturn extends UseFileContentState {
@@ -56,7 +57,8 @@ export function useFileContent(
     enableAutoSave = true,
     saveTimeout = 30000, // 30 seconds default
     onBeforeSave,
-    onAfterSave
+    onAfterSave,
+    onError
   } = options;
 
   const [state, setState] = useState<UseFileContentState>({
@@ -327,6 +329,13 @@ export function useFileContent(
             // Manually trigger save by updating state and calling writeFile
             // We can't use saveFile() here because it reads from state closure
             const saveNow = async () => {
+              // Re-check that we're still on the same file to prevent race condition
+              // where user switches files between path check and save execution
+              if (currentFilePathRef.current !== capturedPath) {
+                console.log('[AutoSave] Race detected, aborting save');
+                return;
+              }
+
               // Call before save callback to track save start
               onBeforeSave?.();
 
@@ -344,20 +353,28 @@ export function useFileContent(
                   }));
                   onAfterSave?.(true);
                 } else {
+                  const errorMessage = result.error || 'Auto-save failed';
                   setState((prev) => ({
                     ...prev,
                     saving: false,
-                    error: result.error || 'Auto-save failed',
+                    error: errorMessage,
                   }));
                   onAfterSave?.(false);
+                  // Notify about auto-save failure
+                  const fileName = capturedPath.split('/').pop() || capturedPath;
+                  onError?.(errorMessage, fileName);
                 }
               } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Auto-save failed';
                 setState(prev => ({
                   ...prev,
                   saving: false,
-                  error: error instanceof Error ? error.message : 'Auto-save failed'
+                  error: errorMessage
                 }));
                 onAfterSave?.(false);
+                // Notify about auto-save failure
+                const fileName = capturedPath.split('/').pop() || capturedPath;
+                onError?.(errorMessage, fileName);
               }
             };
 

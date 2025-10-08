@@ -126,18 +126,23 @@ function AppContent() {
     }
   }, [trackSaveStart]);
 
-  const handleAfterSave = useCallback((_success: boolean) => {
+  const handleAfterSave = useCallback(() => {
     // Note: We intentionally don't do anything here because isSaveActive() uses timestamp checking.
     // The timestamp from handleBeforeSave persists for FILE_WATCHER_DEBOUNCE_MS (2000ms) to properly
     // ignore file watcher events triggered by our own saves. Periodic cleanup removes stale entries.
   }, []);
+
+  const handleAutoSaveError = useCallback((error: string, fileName: string) => {
+    toast.showError(`Auto-save failed for ${fileName}: ${error}`);
+  }, [toast]);
 
   const fileContent = useFileContent({
     enableAutoSave: true,
     autoSaveDelay: TIMING_CONFIG.AUTO_SAVE_DELAY_MS,
     saveTimeout: TIMING_CONFIG.SAVE_TIMEOUT_MS,
     onBeforeSave: handleBeforeSave,
-    onAfterSave: handleAfterSave
+    onAfterSave: handleAfterSave,
+    onError: handleAutoSaveError
   });
 
   // Update the ref when filePath changes
@@ -566,7 +571,7 @@ function AppContent() {
         clearInterval(saveTrackingCleanupIntervalRef.current);
         saveTrackingCleanupIntervalRef.current = null;
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
+      // Clear tracking map - safe to use ref in cleanup since refs are stable
       activeSavesRef.current.clear();
     };
   }, []);
