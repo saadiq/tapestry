@@ -99,9 +99,8 @@ export function FileTreeItem({
   useEffect(() => {
     if (isRenaming && inputRef.current) {
       inputRef.current.focus();
-      // Position cursor at end of text to allow arrow key navigation
-      const length = editValue.length;
-      inputRef.current.setSelectionRange(length, length);
+      // Select all text for immediate replacement (standard file manager UX)
+      inputRef.current.select();
     }
   }, [isRenaming, editValue.length]);
 
