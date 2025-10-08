@@ -4,6 +4,7 @@
  */
 
 import { ChevronRight, ChevronDown, File, Folder, FolderOpen, FileText } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
 import type { FileNode } from '../../../shared/types/fileTree';
 
 interface FileTreeItemProps {
@@ -13,6 +14,7 @@ interface FileTreeItemProps {
   onSelect: (path: string) => void;
   onOpen: (path: string) => void;
   onContextMenu: (event: React.MouseEvent, node: FileNode) => void;
+  onRename: (path: string, newName: string) => void;
   isSelected: boolean;
   isActive: boolean;
   isDirty: boolean;
@@ -25,12 +27,17 @@ export function FileTreeItem({
   onSelect,
   onOpen,
   onContextMenu,
+  onRename,
   isSelected,
   isActive,
   isDirty,
 }: FileTreeItemProps) {
   const isDirectory = node.type === 'directory';
   const hasChildren = isDirectory && node.children && node.children.length > 0;
+
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [editValue, setEditValue] = useState(node.name);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const handleClick = () => {
     if (isDirectory) {
@@ -45,6 +52,57 @@ export function FileTreeItem({
     event.preventDefault();
     onContextMenu(event, node);
   };
+
+  const handleDoubleClick = (event: React.MouseEvent) => {
+    // Only allow inline rename for active files (already open)
+    if (!isDirectory && isActive) {
+      event.stopPropagation(); // Prevent triggering other handlers
+      setIsRenaming(true);
+      setEditValue(node.name);
+    }
+  };
+
+  const handleRenameSubmit = () => {
+    const trimmedValue = editValue.trim();
+
+    // Validate: not empty and different from current name
+    if (trimmedValue && trimmedValue !== node.name) {
+      onRename(node.path, trimmedValue);
+    }
+
+    // Exit rename mode regardless of whether we submitted
+    setIsRenaming(false);
+    setEditValue(node.name); // Reset to current name
+  };
+
+  const handleRenameCancel = () => {
+    setIsRenaming(false);
+    setEditValue(node.name); // Reset to original name
+  };
+
+  const handleRenameKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      handleRenameSubmit();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      handleRenameCancel();
+    }
+  };
+
+  const handleRenameBlur = () => {
+    // Auto-save on blur (clicking outside the input)
+    handleRenameSubmit();
+  };
+
+  // Focus input when entering rename mode
+  useEffect(() => {
+    if (isRenaming && inputRef.current) {
+      inputRef.current.focus();
+      // Select all text for easy replacement
+      inputRef.current.select();
+    }
+  }, [isRenaming]);
 
   // Get appropriate icon based on node type and state
   const getIcon = () => {
@@ -113,15 +171,30 @@ export function FileTreeItem({
       <div className="flex-shrink-0">{getIcon()}</div>
 
       {/* File/folder name */}
-      <span
-        className={`
-          text-sm truncate flex-1
-          ${isActive ? 'font-semibold text-primary' : 'text-base-content'}
-          ${isDirty ? 'italic' : ''}
-        `}
-      >
-        {node.name}
-      </span>
+      {isRenaming ? (
+        <input
+          ref={inputRef}
+          type="text"
+          className="input input-xs input-bordered flex-1 min-w-0"
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={handleRenameBlur}
+          onKeyDown={handleRenameKeyDown}
+          autoFocus
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <span
+          className={`
+            text-sm truncate flex-1
+            ${isActive ? 'font-semibold text-primary' : 'text-base-content'}
+            ${isDirty ? 'italic' : ''}
+          `}
+          onDoubleClick={handleDoubleClick}
+        >
+          {node.name}
+        </span>
+      )}
 
       {/* Dirty indicator (orange dot) for files with unsaved changes */}
       {isDirty && node.type === 'file' && (

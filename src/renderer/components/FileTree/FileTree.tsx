@@ -190,6 +190,11 @@ export function FileTree() {
     }
   };
 
+  const handleInlineRename = async (path: string, newName: string) => {
+    // Use existing rename function from context
+    await rename(path, newName);
+  };
+
   const handleKeyDown = (event: React.KeyboardEvent) => {
     const currentIndex = flattenedNodes.findIndex((node) => node.path === selectedPath);
 
@@ -323,6 +328,7 @@ export function FileTree() {
                     onSelect={selectFile}
                     onOpen={openFile}
                     onContextMenu={handleContextMenu}
+                    onRename={handleInlineRename}
                     isSelected={node.path === selectedPath}
                     isActive={node.path === activePath}
                     isDirty={dirtyPaths.has(node.path)}
