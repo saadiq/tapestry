@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EditorContent } from '@tiptap/react';
-import { useEditor } from '../../hooks/useEditor';
+import { useEditor, hashString } from '../../hooks/useEditor';
 import { EditorToolbar } from './EditorToolbar';
 import { LinkPopover } from './LinkPopover';
 import { MarkdownEditor } from './MarkdownEditor';
@@ -153,12 +153,18 @@ export const EditorComponent = ({
   onUpdateRef.current = onUpdate;
   onContentLoadedRef.current = onContentLoaded;
 
+  // Track the last content that originated from the editor to prevent circular updates
+  const lastEditorContentRef = useRef<string>('');
+
   // Create a wrapped onUpdate that tracks WYSIWYG edits
   const wrappedOnUpdate = useCallback((newContent: string) => {
     // Track that user made edits in WYSIWYG mode
     if (viewModeRef.current === 'wysiwyg') {
       hasWysiwygEditsRef.current = true;
     }
+
+    // Store this content as coming from the editor - don't sync it back
+    lastEditorContentRef.current = newContent;
     onUpdateRef.current?.(newContent);
   }, []);
 
@@ -207,6 +213,23 @@ export const EditorComponent = ({
       selfTriggeredChangeRef.current = false;
     }
 
+    // Don't sync content if nothing has changed - prevents cursor jumps from spurious re-renders
+    if (!editor || !content || (!isViewModeTransition && !hasContentChanged)) {
+      // Update refs even if we skip sync
+      prevViewModeRef.current = viewMode;
+      prevContentRef.current = content;
+      return;
+    }
+
+    // Don't sync content back to editor if the content change originated from the editor itself
+    // This prevents circular updates: user types → onUpdate → parent state → useEffect → setContent
+    if (viewMode === 'wysiwyg' && hasContentChanged && content === lastEditorContentRef.current) {
+      // Update refs to track that we processed this content change
+      prevViewModeRef.current = viewMode;
+      prevContentRef.current = content;
+      return;
+    }
+
     if (editor && content) {
       // Switching from markdown → WYSIWYG: always sync to editor
       if (viewMode === 'wysiwyg' && prevViewModeRef.current === 'markdown') {
@@ -229,13 +252,22 @@ export const EditorComponent = ({
       }
       // Content changed while in WYSIWYG mode: sync to editor
       else if (viewMode === 'wysiwyg' && hasContentChanged) {
-        try {
-          const json = markdownToJSON(content);
-          editor.commands.setContent(json);
-        } catch (error) {
-          console.error('Failed to convert markdown to JSON:', error);
-          // Fallback: set as plain text to prevent complete failure
-          editor.commands.setContent(content);
+        // Check if editor's current content already matches new content to avoid cursor jumps
+        // This happens during auto-save when originalContent is updated but content hasn't changed
+        const currentEditorMarkdown = editor.storage.markdown?.getMarkdown?.() || editor.getHTML();
+        const currentHash = hashString(currentEditorMarkdown);
+        const newHash = hashString(content);
+
+        // Only call setContent if content is actually different
+        if (currentHash !== newHash) {
+          try {
+            const json = markdownToJSON(content);
+            editor.commands.setContent(json);
+          } catch (error) {
+            console.error('Failed to convert markdown to JSON:', error);
+            // Fallback: set as plain text to prevent complete failure
+            editor.commands.setContent(content);
+          }
         }
       }
     }

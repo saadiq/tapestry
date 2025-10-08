@@ -23,93 +23,28 @@ import type { FileWatcherEvent } from '../shared/types/fileSystem';
 import { normalizePath } from './utils/pathUtils';
 import { TIMING_CONFIG } from '../shared/config/timing';
 
-// Track files we're currently saving to ignore file watcher events
-const activeSaves = new Map<string, number>(); // normalized filePath -> timestamp
-
 /**
- * Periodic cleanup interval for activeSaves Map
- * Prevents memory leaks when files are opened rapidly but cleanup never triggers
+ * Save tracking architecture:
+ *
+ * Each AppContent component instance maintains its own save tracking state to coordinate
+ * with file system watchers and prevent false "external edit" warnings.
+ *
+ * Implementation details:
+ * - activeSavesRef: Map<string, number> (normalized filePath -> timestamp)
+ * - trackSaveStart: Marks when a save begins (adds timestamp)
+ * - isSaveActive: Checks if file was saved within FILE_WATCHER_DEBOUNCE_MS (2000ms)
+ * - No trackSaveEnd: Timestamps persist for full debounce window to prevent race conditions
+ *
+ * Why timestamps persist (no early removal):
+ * 1. File watcher events arrive 500-2000ms after save completes (macOS/network drive latency)
+ * 2. Early removal caused race conditions with false "external edit" warnings
+ * 3. Memory is managed via eager cleanup when map exceeds threshold (50 entries)
+ *
+ * Previous approaches that didn't work:
+ * - Module-level state: Poor isolation between component instances
+ * - Periodic cleanup timer: Unnecessary overhead for typical usage
+ * - trackSaveEnd with setTimeout: Race conditions with delayed file watcher events
  */
-let saveTrackingCleanupInterval: NodeJS.Timeout | null = null;
-
-/**
- * Start periodic cleanup of stale save tracking entries
- */
-function startSaveTrackingCleanup(): void {
-  if (saveTrackingCleanupInterval) return; // Already running
-
-  saveTrackingCleanupInterval = setInterval(() => {
-    const now = Date.now();
-    const maxAge = 5000; // 5 seconds
-    for (const [path, timestamp] of activeSaves.entries()) {
-      if (now - timestamp > maxAge) {
-        activeSaves.delete(path);
-      }
-    }
-  }, 10000); // Cleanup every 10 seconds
-}
-
-/**
- * Stop periodic cleanup (called on app unmount)
- */
-function stopSaveTrackingCleanup(): void {
-  if (saveTrackingCleanupInterval) {
-    clearInterval(saveTrackingCleanupInterval);
-    saveTrackingCleanupInterval = null;
-  }
-  activeSaves.clear();
-}
-
-/**
- * Track that a save operation is starting for a file
- * Paths are automatically normalized for cross-platform consistency
- * Performs eager cleanup of stale entries to prevent memory growth
- */
-function trackSaveStart(filePath: string): void {
-  const normalizedPath = normalizePath(filePath);
-  const now = Date.now();
-
-  // Only perform eager cleanup if map is getting large
-  // This optimizes performance for normal usage while preventing memory leaks
-  if (activeSaves.size > TIMING_CONFIG.SAVE_TRACKING_CLEANUP_THRESHOLD) {
-    const maxAge = 5000; // 5 seconds
-    for (const [path, timestamp] of activeSaves.entries()) {
-      if (now - timestamp > maxAge) {
-        activeSaves.delete(path);
-      }
-    }
-  }
-
-  activeSaves.set(normalizedPath, now);
-}
-
-/**
- * Check if a file is currently being saved
- * Returns true if the file was saved within the debounce window
- */
-function isSaveActive(filePath: string): boolean {
-  const normalizedPath = normalizePath(filePath);
-  const saveTimestamp = activeSaves.get(normalizedPath);
-
-  if (!saveTimestamp) {
-    return false;
-  }
-
-  return Date.now() - saveTimestamp < TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS;
-}
-
-/**
- * Mark a save operation as complete
- * Note: We don't delete from activeSaves here because:
- * 1. isSaveActive() uses timestamp checking for debounce (not map presence)
- * 2. Eager cleanup in trackSaveStart() handles rapid file switching
- * 3. Periodic cleanup interval removes stale entries every 10s
- * 4. Using setTimeout here caused race conditions with rapid successive saves
- */
-function trackSaveEnd(filePath: string): void {
-  // No-op: timestamp remains in map for isSaveActive() checking
-  // Cleanup happens via eager cleanup in trackSaveStart() and periodic interval
-}
 
 // Inner component that has access to FileTreeContext and Toast
 function AppContent() {
@@ -139,27 +74,75 @@ function AppContent() {
   // Ref to track current file path for save callbacks
   const currentFilePathRef = useRef<string | null>(null);
 
+  // Track files we're currently saving to ignore file watcher events
+  const activeSavesRef = useRef(new Map<string, number>()); // normalized filePath -> timestamp
+  const saveTrackingCleanupIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  /**
+   * Track that a save operation is starting for a file
+   * Paths are automatically normalized for cross-platform consistency
+   * Performs eager cleanup of stale entries to prevent memory growth
+   */
+  const trackSaveStart = useCallback((filePath: string): void => {
+    const normalizedPath = normalizePath(filePath);
+    const now = Date.now();
+
+    // Only perform eager cleanup if map is getting large
+    // This optimizes performance for normal usage while preventing memory leaks
+    if (activeSavesRef.current.size > TIMING_CONFIG.SAVE_TRACKING_CLEANUP_THRESHOLD) {
+      const maxAge = 5000; // 5 seconds
+      for (const [path, timestamp] of activeSavesRef.current.entries()) {
+        if (now - timestamp > maxAge) {
+          activeSavesRef.current.delete(path);
+        }
+      }
+    }
+
+    activeSavesRef.current.set(normalizedPath, now);
+  }, []);
+
+  /**
+   * Check if a file is currently being saved
+   * Returns true if the file was saved within the debounce window
+   */
+  const isSaveActive = useCallback((filePath: string): boolean => {
+    const normalizedPath = normalizePath(filePath);
+    const saveTimestamp = activeSavesRef.current.get(normalizedPath);
+    const now = Date.now();
+
+    if (!saveTimestamp) {
+      return false;
+    }
+
+    const age = now - saveTimestamp;
+    return age < TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS;
+  }, []);
+
   // Save lifecycle callbacks to track save state per file
   const handleBeforeSave = useCallback(() => {
     const currentPath = currentFilePathRef.current;
     if (currentPath) {
       trackSaveStart(currentPath);
     }
+  }, [trackSaveStart]);
+
+  const handleAfterSave = useCallback(() => {
+    // Note: We intentionally don't do anything here because isSaveActive() uses timestamp checking.
+    // The timestamp from handleBeforeSave persists for FILE_WATCHER_DEBOUNCE_MS (2000ms) to properly
+    // ignore file watcher events triggered by our own saves. Periodic cleanup removes stale entries.
   }, []);
 
-  const handleAfterSave = useCallback((success: boolean) => {
-    const currentPath = currentFilePathRef.current;
-    if (currentPath) {
-      trackSaveEnd(currentPath);
-    }
-  }, []);
+  const handleAutoSaveError = useCallback((error: string, fileName: string) => {
+    toast.showError(`Auto-save failed for ${fileName}: ${error}`);
+  }, [toast]);
 
   const fileContent = useFileContent({
     enableAutoSave: true,
     autoSaveDelay: TIMING_CONFIG.AUTO_SAVE_DELAY_MS,
     saveTimeout: TIMING_CONFIG.SAVE_TIMEOUT_MS,
     onBeforeSave: handleBeforeSave,
-    onAfterSave: handleAfterSave
+    onAfterSave: handleAfterSave,
+    onError: handleAutoSaveError
   });
 
   // Update the ref when filePath changes
@@ -201,7 +184,13 @@ function AppContent() {
     // Only update content and originalContent when file is not dirty
     if (!fileContent.isDirty) {
       fileContent.updateOriginalContent(convertedContent);
-      fileContent.updateContent(convertedContent);
+
+      // Only update content if it's actually different to prevent cursor jumps
+      // This happens during auto-save: file becomes clean, editor fires onContentLoaded,
+      // but content hasn't changed - updating it would reset cursor position
+      if (fileContent.content !== convertedContent) {
+        fileContent.updateContent(convertedContent);
+      }
     }
   }, [fileContent]);
 
@@ -377,16 +366,20 @@ function AppContent() {
         }
 
         // Save using captured state to ensure we save the right content even if user switched files
+        // Track save start before attempting write
+        trackSaveStart(capturedState.filePath);
+
         try {
           const result = await fileSystemService.writeFile(capturedState.filePath, capturedState.content);
 
           if (!result.success) {
             // Don't prevent blur, but show warning
             currentToast.showWarning(`Auto-save failed on window blur: ${result.error}`);
+            // Note: We don't call trackSaveEnd on failure - the timestamp will age out naturally
+            // This ensures we don't get false positives if the file gets modified externally shortly after
           } else {
-            // Track save completion for file watcher
-            trackSaveStart(capturedState.filePath);
-            setTimeout(() => trackSaveEnd(capturedState.filePath), TIMING_CONFIG.SAVE_EVENT_TRACKING_DELAY_MS);
+            // Note: We don't call trackSaveEnd here - the timestamp from trackSaveStart (line 446)
+            // persists for FILE_WATCHER_DEBOUNCE_MS (2000ms) to ignore file watcher events
 
             // Only clear dirty state if still on the same file
             if (fileContentRef.current.filePath === capturedState.filePath) {
@@ -397,6 +390,7 @@ function AppContent() {
           currentToast.showWarning(
             `Auto-save failed on window blur: ${error instanceof Error ? error.message : 'Unknown error'}`
           );
+          // Note: We don't call trackSaveEnd on error - the timestamp will age out naturally
         }
       }, TIMING_CONFIG.BLUR_SAVE_DEBOUNCE_MS);
     };
@@ -409,7 +403,7 @@ function AppContent() {
         clearTimeout(blurTimeoutRef.current);
       }
     };
-  }, []); // Empty deps - register once, use refs for values
+  }, [trackSaveStart]); // Include tracking function (stable via useCallback)
 
   // Clear blur timeout and warnings when file is closed to prevent stale saves and memory leaks
   useEffect(() => {
@@ -476,7 +470,10 @@ function AppContent() {
         // If active file was modified externally
         if (normalizedEventPath && normalizedActivePath && normalizedEventPath === normalizedActivePath) {
           // Skip if we're currently saving this specific file
-          if (currentActivePath && isSaveActive(currentActivePath)) {
+          // Use fileContent.filePath since that's what trackSaveStart uses
+          const currentFilePath = currentFileContent.filePath;
+
+          if (currentFilePath && isSaveActive(currentFilePath)) {
             // This is likely our own save, ignore it
             return;
           }
@@ -524,7 +521,7 @@ function AppContent() {
         window.electronAPI.fileSystem.removeFileChangeListener(handleFileChange);
       }
     };
-  }, [rootPath, loadDirectory, normalizedActivePath]);
+  }, [rootPath, loadDirectory, normalizedActivePath, isSaveActive]);
 
   // Listen for menu events from main process - uses refs to prevent memory leak
   useEffect(() => {
@@ -555,9 +552,27 @@ function AppContent() {
 
   // Start/stop save tracking cleanup on mount/unmount
   useEffect(() => {
-    startSaveTrackingCleanup();
+    // Start periodic cleanup of stale save tracking entries
+    if (saveTrackingCleanupIntervalRef.current) return; // Already running
+
+    saveTrackingCleanupIntervalRef.current = setInterval(() => {
+      const now = Date.now();
+      const maxAge = 5000; // 5 seconds
+      for (const [path, timestamp] of activeSavesRef.current.entries()) {
+        if (now - timestamp > maxAge) {
+          activeSavesRef.current.delete(path);
+        }
+      }
+    }, 10000); // Cleanup every 10 seconds
+
     return () => {
-      stopSaveTrackingCleanup();
+      // Stop periodic cleanup on unmount
+      if (saveTrackingCleanupIntervalRef.current) {
+        clearInterval(saveTrackingCleanupIntervalRef.current);
+        saveTrackingCleanupIntervalRef.current = null;
+      }
+      // Clear tracking map - safe to use ref in cleanup since refs are stable
+      activeSavesRef.current.clear();
     };
   }, []);
 

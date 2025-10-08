@@ -29,6 +29,7 @@ interface UseFileContentOptions {
   saveTimeout?: number; // Timeout in milliseconds for save operations (default: 30000ms / 30s)
   onBeforeSave?: () => void; // Called before save starts (both auto and manual)
   onAfterSave?: (success: boolean) => void; // Called after save completes (both auto and manual)
+  onError?: (error: string, fileName: string) => void; // Called when auto-save fails
 }
 
 interface UseFileContentReturn extends UseFileContentState {
@@ -56,7 +57,8 @@ export function useFileContent(
     enableAutoSave = true,
     saveTimeout = 30000, // 30 seconds default
     onBeforeSave,
-    onAfterSave
+    onAfterSave,
+    onError
   } = options;
 
   const [state, setState] = useState<UseFileContentState>({
@@ -76,6 +78,10 @@ export function useFileContent(
   // Track current file path to avoid stale closure issues in auto-save
   const currentFilePathRef = useRef<string | null>(state.filePath);
   currentFilePathRef.current = state.filePath;
+
+  // Track current content to avoid stale closure issues in auto-save timer
+  const contentRef = useRef<string>(state.content);
+  contentRef.current = state.content;
 
   /**
    * Clear auto-save timer
@@ -124,6 +130,9 @@ export function useFileContent(
    * Save file content with timeout protection
    */
   const saveFile = useCallback(async (pathOverride?: string): Promise<boolean> => {
+    // Clear any pending auto-save timer to prevent duplicate saves
+    clearAutoSaveTimer();
+
     const filePath = pathOverride || state.filePath;
 
     if (!filePath) {
@@ -194,7 +203,7 @@ export function useFileContent(
         clearTimeout(timeoutId);
       }
     }
-  }, [state.filePath, state.content, state.isDirty, onBeforeSave, onAfterSave, saveTimeout]);
+  }, [state.filePath, state.content, state.isDirty, clearAutoSaveTimer, onBeforeSave, onAfterSave, saveTimeout]);
 
   /**
    * Save file immediately without debounce
@@ -305,32 +314,76 @@ export function useFileContent(
 
       // Set new auto-save timer if enabled
       if (enableAutoSave && currentFilePathRef.current) {
-        // Capture the file path when setting the timer
+        // Capture the file path and content when setting the timer
         // This prevents saving to the wrong file if user switches files
+        // and ensures we save the latest content even with async state updates
         const capturedPath = currentFilePathRef.current;
 
         autoSaveTimerRef.current = setTimeout(() => {
           // Only save if still on the same file (prevents saving to wrong file)
           if (currentFilePathRef.current === capturedPath) {
-            // Save with the current path - saveFile will read latest content from state
-            saveFile(capturedPath).catch((error) => {
-              console.error('[AutoSave] Failed for', capturedPath, ':', error);
-              // Update state with error
-              setState(prev => ({
-                ...prev,
-                error: error instanceof Error ? error.message : 'Auto-save failed'
-              }));
-              // Notify callbacks that auto-save failed
-              onAfterSave?.(false);
-            });
-          } else {
-            // Log when auto-save is skipped due to file switch
-            console.log('[AutoSave] Skipped auto-save for', capturedPath, '- user switched to', currentFilePathRef.current);
+            // Read latest content from ref to avoid stale closure issues
+            // The contentRef is updated synchronously on every state change
+            const latestContent = contentRef.current;
+
+            // Manually trigger save by updating state and calling writeFile
+            // We can't use saveFile() here because it reads from state closure
+            const saveNow = async () => {
+              // Re-check that we're still on the same file to prevent race condition
+              // where user switches files between path check and save execution
+              if (currentFilePathRef.current !== capturedPath) {
+                console.log('[AutoSave] Race detected, aborting save');
+                return;
+              }
+
+              // Call before save callback to track save start
+              onBeforeSave?.();
+
+              setState((prev) => ({ ...prev, saving: true, error: null }));
+
+              try {
+                const result = await fileSystemService.writeFile(capturedPath, latestContent);
+
+                if (result.success) {
+                  setState((prev) => ({
+                    ...prev,
+                    originalContent: latestContent,
+                    isDirty: false,
+                    saving: false,
+                  }));
+                  onAfterSave?.(true);
+                } else {
+                  const errorMessage = result.error || 'Auto-save failed';
+                  setState((prev) => ({
+                    ...prev,
+                    saving: false,
+                    error: errorMessage,
+                  }));
+                  onAfterSave?.(false);
+                  // Notify about auto-save failure
+                  const fileName = capturedPath.split('/').pop() || capturedPath;
+                  onError?.(errorMessage, fileName);
+                }
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Auto-save failed';
+                setState(prev => ({
+                  ...prev,
+                  saving: false,
+                  error: errorMessage
+                }));
+                onAfterSave?.(false);
+                // Notify about auto-save failure
+                const fileName = capturedPath.split('/').pop() || capturedPath;
+                onError?.(errorMessage, fileName);
+              }
+            };
+
+            saveNow();
           }
         }, autoSaveDelay);
       }
     },
-    [enableAutoSave, autoSaveDelay, clearAutoSaveTimer, saveFile, onAfterSave]
+    [enableAutoSave, autoSaveDelay, clearAutoSaveTimer, onBeforeSave, onAfterSave]
   );
 
   /**

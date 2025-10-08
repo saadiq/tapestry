@@ -32,8 +32,9 @@ interface UseEditorOptions {
 /**
  * Simple string hash function (DJB2 algorithm)
  * Used to quickly compare content without string comparisons
+ * Exported for use in other components to avoid unnecessary re-renders
  */
-function hashString(str: string): number {
+export function hashString(str: string): number {
   let hash = 5381;
   for (let i = 0; i < str.length; i++) {
     hash = (hash * 33) ^ str.charCodeAt(i);
@@ -54,6 +55,10 @@ export const useEditor = ({
   const lastContentHashRef = useRef(0);
   const isSettingContentRef = useRef(false);
   const turndown = useRef(createTurndownService());
+
+  // Track the last markdown content that we sent via onUpdate
+  // This prevents circular updates when that same content comes back via the content prop
+  const lastOnUpdateContentRef = useRef('');
 
   // Stable reference to onContentLoaded callback
   const onContentLoadedRef = useRef(onContentLoaded);
@@ -124,6 +129,11 @@ export const useEditor = ({
         const html = editor.getHTML();
         const markdown = turndown.current.turndown(html);
         lastContentRef.current = markdown;
+
+        // Store this markdown as the last content sent via onUpdate
+        // This prevents setContent from being called when this same content comes back via props
+        lastOnUpdateContentRef.current = markdown;
+
         onUpdate(markdown);
       }
     },
@@ -146,6 +156,12 @@ export const useEditor = ({
     }
 
     if (content === undefined || content === null) {
+      return;
+    }
+
+    // Check if this content came from our own onUpdate callback
+    // If so, skip setContent to prevent cursor jump
+    if (content === lastOnUpdateContentRef.current) {
       return;
     }
 
