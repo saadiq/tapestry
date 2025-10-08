@@ -196,6 +196,11 @@ export function FileTree() {
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    // Don't intercept keyboard events when user is typing in an input
+    if (event.target instanceof HTMLInputElement) {
+      return;
+    }
+
     const currentIndex = flattenedNodes.findIndex((node) => node.path === selectedPath);
 
     if (currentIndex === -1) return;
