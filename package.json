@@ -14,9 +14,9 @@
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
-    "test": "vitest",
-    "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage"
+    "test": "bun test",
+    "test:ui": "bun test --ui",
+    "test:coverage": "bun test --coverage"
   },
   "keywords": [],
   "author": {

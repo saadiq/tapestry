@@ -65,8 +65,10 @@ export function FileTreeItem({
   const handleRenameSubmit = () => {
     const trimmedValue = editValue.trim();
 
-    // Validate: not empty and different from current name
-    if (trimmedValue && trimmedValue !== node.name) {
+    // Validate: not empty, different from current name, and no filesystem-unsafe characters
+    // Reject: / \ : * ? " < > | and null character
+    const unsafeChars = /[/\\:*?"<>|\x00]/;
+    if (trimmedValue && trimmedValue !== node.name && !unsafeChars.test(trimmedValue)) {
       onRename(node.path, trimmedValue);
     }
 

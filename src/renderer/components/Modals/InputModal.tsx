@@ -53,8 +53,8 @@ export function InputModal({
   if (!isOpen) return null;
 
   return (
-    <div className="modal modal-open">
-      <div className="modal-box">
+    <div className="modal modal-open" onClick={handleCancel}>
+      <div className="modal-box" onClick={(e) => e.stopPropagation()}>
         <h3 className="font-bold text-lg">{title}</h3>
         {message && <p className="py-4">{message}</p>}
         <form onSubmit={handleSubmit}>
@@ -76,7 +76,6 @@ export function InputModal({
           </div>
         </form>
       </div>
-      <div className="modal-backdrop"></div>
     </div>
   );
 }
