@@ -36,6 +36,9 @@ export interface IElectronAPI {
     unwatchDirectory: (dirPath: string) => Promise<FileOperationResult>;
     onFileChange: (callback: (event: FileWatcherEvent) => void) => void;
     removeFileChangeListener: (callback: (event: FileWatcherEvent) => void) => void;
+
+    // Shell operations
+    showItemInFolder: (itemPath: string) => Promise<{ success: boolean; error?: string }>;
   };
 
   // Update operations
