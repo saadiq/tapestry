@@ -327,31 +327,23 @@ export function useFileContent(
             // Manually trigger save by updating state and calling writeFile
             // We can't use saveFile() here because it reads from state closure
             const saveNow = async () => {
-              console.log('[AutoSave] Starting auto-save for:', capturedPath);
-              console.log('[AutoSave] Content length:', latestContent.length);
-
               // Call before save callback to track save start
-              console.log('[AutoSave] Calling onBeforeSave callback');
               onBeforeSave?.();
 
               setState((prev) => ({ ...prev, saving: true, error: null }));
 
               try {
-                console.log('[AutoSave] Writing file:', capturedPath);
                 const result = await fileSystemService.writeFile(capturedPath, latestContent);
 
                 if (result.success) {
-                  console.log('[AutoSave] SUCCESS - File saved, marking clean');
                   setState((prev) => ({
                     ...prev,
                     originalContent: latestContent,
                     isDirty: false,
                     saving: false,
                   }));
-                  console.log('[AutoSave] Calling onAfterSave(true)');
                   onAfterSave?.(true);
                 } else {
-                  console.error('[AutoSave] FAILED:', result.error);
                   setState((prev) => ({
                     ...prev,
                     saving: false,
@@ -360,7 +352,6 @@ export function useFileContent(
                   onAfterSave?.(false);
                 }
               } catch (error) {
-                console.error('[AutoSave] EXCEPTION for', capturedPath, ':', error);
                 setState(prev => ({
                   ...prev,
                   saving: false,
@@ -371,9 +362,6 @@ export function useFileContent(
             };
 
             saveNow();
-          } else {
-            // Log when auto-save is skipped due to file switch
-            console.log('[AutoSave] Skipped auto-save for', capturedPath, '- user switched to', currentFilePathRef.current);
           }
         }, autoSaveDelay);
       }

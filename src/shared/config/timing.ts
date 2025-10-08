@@ -14,12 +14,12 @@ export const TIMING_CONFIG = {
   /**
    * File watcher debounce delay in milliseconds
    * Time to ignore file watcher events after our own save operations
-   * Set to 4000ms because macOS fs.watch can fire events 3000-3500ms after a write
+   * Set to 5000ms because macOS fs.watch can fire events 4000-4500ms after a write
    * due to filesystem buffering and disk I/O latency. This prevents false "external change" warnings.
-   * Testing shows events arriving at 3020-3023ms, so 4000ms provides safe margin.
-   * @default 4000ms (4 seconds)
+   * Testing shows events arriving at 4018-4025ms, so 5000ms provides safe margin.
+   * @default 5000ms (5 seconds)
    */
-  FILE_WATCHER_DEBOUNCE_MS: 4000,
+  FILE_WATCHER_DEBOUNCE_MS: 5000,
 
   /**
    * Window blur save debounce in milliseconds
