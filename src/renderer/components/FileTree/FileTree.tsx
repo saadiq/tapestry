@@ -116,7 +116,7 @@ export function FileTree() {
     });
   };
 
-  const handleContextMenuAction = (action: ContextMenuAction, path: string) => {
+  const handleContextMenuAction = async (action: ContextMenuAction, path: string) => {
     // Close context menu
     setContextMenu({
       isOpen: false,
@@ -148,10 +148,18 @@ export function FileTree() {
         setDeleteDialog({ isOpen: true, path, name });
         break;
       }
-      case 'reveal-in-finder':
-        // TODO: Implement reveal in Finder (requires shell command)
-        console.log('Reveal in Finder', path);
+      case 'reveal-in-finder': {
+        try {
+          const result = await window.electronAPI.fileSystem.showItemInFolder(path);
+          if (!result.success) {
+            toast.showError(result.error || 'Failed to reveal item in file manager');
+          }
+        } catch (error) {
+          console.error('Error revealing in finder:', error);
+          toast.showError('Failed to reveal item in file manager');
+        }
         break;
+      }
     }
   };
 
