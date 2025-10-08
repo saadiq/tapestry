@@ -153,13 +153,23 @@ export const EditorComponent = ({
   onUpdateRef.current = onUpdate;
   onContentLoadedRef.current = onContentLoaded;
 
+  // Ref to track if we're in the middle of a user edit (prevents circular updates)
+  const isUserEditingRef = useRef(false);
+
   // Create a wrapped onUpdate that tracks WYSIWYG edits
   const wrappedOnUpdate = useCallback((newContent: string) => {
     // Track that user made edits in WYSIWYG mode
     if (viewModeRef.current === 'wysiwyg') {
       hasWysiwygEditsRef.current = true;
     }
+
+    // Mark that we're processing a user edit to prevent useEffect from calling setContent
+    isUserEditingRef.current = true;
     onUpdateRef.current?.(newContent);
+    // Reset flag after a brief delay to allow React state updates to propagate
+    setTimeout(() => {
+      isUserEditingRef.current = false;
+    }, 10);
   }, []);
 
   // Create a wrapped onContentLoaded that is conditional on view mode
@@ -222,6 +232,16 @@ export const EditorComponent = ({
       console.log('[EditorComponent]   editor:', !!editor);
       console.log('[EditorComponent]   content:', !!content);
       // Update refs even if we skip sync
+      prevViewModeRef.current = viewMode;
+      prevContentRef.current = content;
+      return;
+    }
+
+    // Don't sync content back to editor if change came from user typing
+    // This prevents circular updates: user types → onUpdate → parent state → useEffect → setContent
+    if (isUserEditingRef.current && viewMode === 'wysiwyg' && hasContentChanged) {
+      console.log('[EditorComponent] EARLY RETURN - User is editing, skipping setContent');
+      // Update refs to track that we processed this content change
       prevViewModeRef.current = viewMode;
       prevContentRef.current = content;
       return;
