@@ -67,11 +67,11 @@ function stopSaveTrackingCleanup(): void {
  */
 function trackSaveStart(filePath: string): void {
   const normalizedPath = normalizePath(filePath);
+  const now = Date.now();
 
   // Only perform eager cleanup if map is getting large
   // This optimizes performance for normal usage while preventing memory leaks
   if (activeSaves.size > TIMING_CONFIG.SAVE_TRACKING_CLEANUP_THRESHOLD) {
-    const now = Date.now();
     const maxAge = 5000; // 5 seconds
     for (const [path, timestamp] of activeSaves.entries()) {
       if (now - timestamp > maxAge) {
@@ -99,16 +99,16 @@ function isSaveActive(filePath: string): boolean {
 }
 
 /**
- * Mark a save operation as complete and schedule cleanup
+ * Mark a save operation as complete
+ * Note: We don't delete from activeSaves here because:
+ * 1. isSaveActive() uses timestamp checking for debounce (not map presence)
+ * 2. Eager cleanup in trackSaveStart() handles rapid file switching
+ * 3. Periodic cleanup interval removes stale entries every 10s
+ * 4. Using setTimeout here caused race conditions with rapid successive saves
  */
 function trackSaveEnd(filePath: string): void {
-  const normalizedPath = normalizePath(filePath);
-
-  // Keep the save timestamp for debounce period to ignore file watcher events
-  // Cleanup happens eagerly in trackSaveStart and periodically via interval
-  setTimeout(() => {
-    activeSaves.delete(normalizedPath);
-  }, TIMING_CONFIG.FILE_WATCHER_DEBOUNCE_MS);
+  // No-op: timestamp remains in map for isSaveActive() checking
+  // Cleanup happens via eager cleanup in trackSaveStart() and periodic interval
 }
 
 // Inner component that has access to FileTreeContext and Toast
@@ -493,9 +493,20 @@ function AppContent() {
               'Save your changes to overwrite external modifications.'
             );
           } else {
-            // Reload file from disk
-            await currentFileContent.loadFile(currentActivePath);
-            currentToast.showInfo('File reloaded due to external changes');
+            // Before reloading, check if content actually changed
+            // This prevents unnecessary reloads from spurious file watcher events
+            const fileResult = await fileSystemService.readFile(currentActivePath);
+            if (!fileResult.success) {
+              console.warn('[File Watcher] Failed to read file for comparison:', fileResult.error);
+              return;
+            }
+
+            // Only reload if content differs from what's in the editor
+            if (fileResult.content !== currentFileContent.content) {
+              await currentFileContent.loadFile(currentActivePath);
+              currentToast.showInfo('File reloaded due to external changes');
+            }
+            // If content is the same, silently ignore (no reload, no toast)
           }
         }
 
