@@ -77,6 +77,10 @@ export function useFileContent(
   const currentFilePathRef = useRef<string | null>(state.filePath);
   currentFilePathRef.current = state.filePath;
 
+  // Track current content to avoid stale closure issues in auto-save timer
+  const contentRef = useRef<string>(state.content);
+  contentRef.current = state.content;
+
   /**
    * Clear auto-save timer
    */
@@ -124,6 +128,9 @@ export function useFileContent(
    * Save file content with timeout protection
    */
   const saveFile = useCallback(async (pathOverride?: string): Promise<boolean> => {
+    // Clear any pending auto-save timer to prevent duplicate saves
+    clearAutoSaveTimer();
+
     const filePath = pathOverride || state.filePath;
 
     if (!filePath) {
@@ -194,7 +201,7 @@ export function useFileContent(
         clearTimeout(timeoutId);
       }
     }
-  }, [state.filePath, state.content, state.isDirty, onBeforeSave, onAfterSave, saveTimeout]);
+  }, [state.filePath, state.content, state.isDirty, clearAutoSaveTimer, onBeforeSave, onAfterSave, saveTimeout]);
 
   /**
    * Save file immediately without debounce
@@ -305,24 +312,54 @@ export function useFileContent(
 
       // Set new auto-save timer if enabled
       if (enableAutoSave && currentFilePathRef.current) {
-        // Capture the file path when setting the timer
+        // Capture the file path and content when setting the timer
         // This prevents saving to the wrong file if user switches files
+        // and ensures we save the latest content even with async state updates
         const capturedPath = currentFilePathRef.current;
 
         autoSaveTimerRef.current = setTimeout(() => {
           // Only save if still on the same file (prevents saving to wrong file)
           if (currentFilePathRef.current === capturedPath) {
-            // Save with the current path - saveFile will read latest content from state
-            saveFile(capturedPath).catch((error) => {
-              console.error('[AutoSave] Failed for', capturedPath, ':', error);
-              // Update state with error
-              setState(prev => ({
-                ...prev,
-                error: error instanceof Error ? error.message : 'Auto-save failed'
-              }));
-              // Notify callbacks that auto-save failed
-              onAfterSave?.(false);
-            });
+            // Read latest content from ref to avoid stale closure issues
+            // The contentRef is updated synchronously on every state change
+            const latestContent = contentRef.current;
+
+            // Manually trigger save by updating state and calling writeFile
+            // We can't use saveFile() here because it reads from state closure
+            const saveNow = async () => {
+              setState((prev) => ({ ...prev, saving: true, error: null }));
+
+              try {
+                const result = await fileSystemService.writeFile(capturedPath, latestContent);
+
+                if (result.success) {
+                  setState((prev) => ({
+                    ...prev,
+                    originalContent: latestContent,
+                    isDirty: false,
+                    saving: false,
+                  }));
+                  onAfterSave?.(true);
+                } else {
+                  setState((prev) => ({
+                    ...prev,
+                    saving: false,
+                    error: result.error || 'Auto-save failed',
+                  }));
+                  onAfterSave?.(false);
+                }
+              } catch (error) {
+                console.error('[AutoSave] Failed for', capturedPath, ':', error);
+                setState(prev => ({
+                  ...prev,
+                  saving: false,
+                  error: error instanceof Error ? error.message : 'Auto-save failed'
+                }));
+                onAfterSave?.(false);
+              }
+            };
+
+            saveNow();
           } else {
             // Log when auto-save is skipped due to file switch
             console.log('[AutoSave] Skipped auto-save for', capturedPath, '- user switched to', currentFilePathRef.current);
@@ -330,7 +367,7 @@ export function useFileContent(
         }, autoSaveDelay);
       }
     },
-    [enableAutoSave, autoSaveDelay, clearAutoSaveTimer, saveFile, onAfterSave]
+    [enableAutoSave, autoSaveDelay, clearAutoSaveTimer, onAfterSave]
   );
 
   /**
