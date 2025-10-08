@@ -6,6 +6,7 @@
 import { ChevronRight, ChevronDown, File, Folder, FolderOpen, FileText } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import type { FileNode } from '../../../shared/types/fileTree';
+import { isValidFilename } from '../../utils/fileValidation';
 
 interface FileTreeItemProps {
   node: FileNode;
@@ -65,10 +66,8 @@ export function FileTreeItem({
   const handleRenameSubmit = () => {
     const trimmedValue = editValue.trim();
 
-    // Validate: not empty, different from current name, and no filesystem-unsafe characters
-    // Reject: / \ : * ? " < > | and null character
-    const unsafeChars = /[/\\:*?"<>|\x00]/;
-    if (trimmedValue && trimmedValue !== node.name && !unsafeChars.test(trimmedValue)) {
+    // Validate: not empty, different from current name, and filesystem-safe
+    if (trimmedValue && trimmedValue !== node.name && isValidFilename(trimmedValue)) {
       onRename(node.path, trimmedValue);
     }
 
