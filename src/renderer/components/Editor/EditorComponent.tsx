@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { EditorContent } from '@tiptap/react';
 import { useEditor, hashString } from '../../hooks/useEditor';
 import { EditorToolbar } from './EditorToolbar';
-import { LinkPopover } from './LinkPopover';
 import { MarkdownEditor } from './MarkdownEditor';
 import { markdownToJSON } from '../../utils/markdown';
 import type { ViewMode } from '@shared/types/editor';
@@ -119,7 +118,6 @@ export const EditorComponent = ({
   editable = true,
 }: EditorComponentProps) => {
   const [, forceUpdate] = useState({});
-  const [isLinkPopoverOpen, setIsLinkPopoverOpen] = useState(false);
 
   // View mode state with localStorage persistence
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -281,36 +279,10 @@ export const EditorComponent = ({
     setViewMode((prev) => (prev === 'wysiwyg' ? 'markdown' : 'wysiwyg'));
   };
 
-  // Set up keyboard shortcuts
-  useEffect(() => {
-    if (!editor) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle WYSIWYG shortcuts when in WYSIWYG mode (use ref to avoid stale closures)
-      if (viewModeRef.current !== 'wysiwyg') return;
-
-      // Cmd/Ctrl + K for link popover
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setIsLinkPopoverOpen(true);
-      }
-
-      // Cmd/Ctrl + E for inline code (alternative)
-      if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
-        e.preventDefault();
-        editor.chain().focus().toggleCode().run();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [editor]);
-
   return (
     <div className="flex h-full flex-col bg-base-100">
       <EditorToolbar
         editor={editor}
-        onOpenLinkPopover={() => setIsLinkPopoverOpen(true)}
         viewMode={viewMode}
         onToggleViewMode={toggleViewMode}
       />
@@ -326,11 +298,6 @@ export const EditorComponent = ({
           />
         )}
       </div>
-      <LinkPopover
-        editor={editor}
-        isOpen={isLinkPopoverOpen}
-        onClose={() => setIsLinkPopoverOpen(false)}
-      />
     </div>
   );
 };
