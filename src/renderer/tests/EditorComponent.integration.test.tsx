@@ -3,13 +3,17 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { EditorComponent } from '../components/Editor/EditorComponent';
 
 describe('EditorComponent - Toolbar Integration', () => {
+  const noop = () => {
+    /* intentionally empty */
+  };
+
   beforeEach(() => {
     // Clear localStorage to ensure consistent starting state
     localStorage.clear();
   });
 
   test('markdown guide link appears in markdown mode', async () => {
-    render(<EditorComponent content="# Test" onUpdate={() => {}} />);
+    render(<EditorComponent content="# Test" onUpdate={noop} />);
 
     // Should not show in WYSIWYG mode
     expect(screen.queryByText('Markdown Guide')).not.toBeInTheDocument();
@@ -25,7 +29,7 @@ describe('EditorComponent - Toolbar Integration', () => {
   });
 
   test('markdown guide opens from markdown mode', async () => {
-    render(<EditorComponent content="# Test" onUpdate={() => {}} />);
+    render(<EditorComponent content="# Test" onUpdate={noop} />);
 
     // Switch to markdown mode
     const viewToggle = screen.getByTitle(/Switch to Markdown/i);
@@ -46,7 +50,7 @@ describe('EditorComponent - Toolbar Integration', () => {
   });
 
   test('markdown guide can be closed', async () => {
-    render(<EditorComponent content="# Test" onUpdate={() => {}} />);
+    render(<EditorComponent content="# Test" onUpdate={noop} />);
 
     // Switch to markdown mode
     const viewToggle = screen.getByTitle(/Switch to Markdown/i);
@@ -71,7 +75,7 @@ describe('EditorComponent - Toolbar Integration', () => {
   });
 
   test('view toggle button works in both modes', async () => {
-    render(<EditorComponent content="# Test" onUpdate={() => {}} />);
+    render(<EditorComponent content="# Test" onUpdate={noop} />);
 
     // View toggle should exist in WYSIWYG mode
     const viewToggleWysiwyg = screen.getByTitle(/Switch to Markdown/i);
@@ -118,7 +122,7 @@ describe('EditorComponent - Toolbar Integration', () => {
   });
 
   test('markdown guide shows all expected sections', async () => {
-    render(<EditorComponent content="# Test" onUpdate={() => {}} />);
+    render(<EditorComponent content="# Test" onUpdate={noop} />);
 
     // Switch to markdown mode
     const viewToggle = screen.getByTitle(/Switch to Markdown/i);

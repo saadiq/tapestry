@@ -3,20 +3,24 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MarkdownGuide } from './MarkdownGuide';
 
 describe('MarkdownGuide', () => {
+  const noop = () => {
+    /* intentionally empty */
+  };
+
   test('does not render when isOpen is false', () => {
-    render(<MarkdownGuide isOpen={false} onClose={() => {}} />);
+    render(<MarkdownGuide isOpen={false} onClose={noop} />);
 
     expect(screen.queryByText('Markdown Syntax Guide')).not.toBeInTheDocument();
   });
 
   test('renders guide when isOpen is true', () => {
-    render(<MarkdownGuide isOpen={true} onClose={() => {}} />);
+    render(<MarkdownGuide isOpen={true} onClose={noop} />);
 
     expect(screen.getByText('Markdown Syntax Guide')).toBeInTheDocument();
   });
 
   test('displays all section headings', () => {
-    render(<MarkdownGuide isOpen={true} onClose={() => {}} />);
+    render(<MarkdownGuide isOpen={true} onClose={noop} />);
 
     expect(screen.getByText('Text Formatting')).toBeInTheDocument();
     expect(screen.getByText('Headings')).toBeInTheDocument();
@@ -30,7 +34,9 @@ describe('MarkdownGuide', () => {
 
   test('calls onClose when close button is clicked', () => {
     let closeCalled = false;
-    const handleClose = () => { closeCalled = true; };
+    const handleClose = () => {
+      closeCalled = true;
+    };
 
     render(<MarkdownGuide isOpen={true} onClose={handleClose} />);
 
@@ -42,7 +48,9 @@ describe('MarkdownGuide', () => {
 
   test('calls onClose when footer Close button is clicked', () => {
     let closeCalled = false;
-    const handleClose = () => { closeCalled = true; };
+    const handleClose = () => {
+      closeCalled = true;
+    };
 
     render(<MarkdownGuide isOpen={true} onClose={handleClose} />);
 
@@ -54,7 +62,7 @@ describe('MarkdownGuide', () => {
   });
 
   test('displays markdown syntax examples', () => {
-    render(<MarkdownGuide isOpen={true} onClose={() => {}} />);
+    render(<MarkdownGuide isOpen={true} onClose={noop} />);
 
     // Check for some example syntax
     expect(screen.getByText('**bold text**')).toBeInTheDocument();
