@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { MarkdownGuide } from './MarkdownGuide';
 
 interface MarkdownEditorProps {
   content: string;
@@ -15,6 +16,7 @@ export const MarkdownEditor = ({
 }: MarkdownEditorProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [localContent, setLocalContent] = useState(content);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   // Track whether content change is from external source or user typing
   // This prevents cursor jumps when external updates come in during typing
@@ -44,16 +46,32 @@ export const MarkdownEditor = ({
   };
 
   return (
-    <textarea
-      ref={textareaRef}
-      className="markdown-editor"
-      value={localContent}
-      onChange={handleChange}
-      placeholder={placeholder}
-      readOnly={!editable}
-      spellCheck="false"
-      aria-label={placeholder}
-      tabIndex={0}
-    />
+    <div className="relative w-full h-full">
+      <textarea
+        ref={textareaRef}
+        className="markdown-editor"
+        value={localContent}
+        onChange={handleChange}
+        placeholder={placeholder}
+        readOnly={!editable}
+        spellCheck="false"
+        aria-label={placeholder}
+        tabIndex={0}
+      />
+
+      {/* Markdown Guide Link */}
+      <button
+        onClick={() => setIsGuideOpen(true)}
+        className="absolute bottom-4 right-4 text-sm link link-primary"
+      >
+        Markdown Guide
+      </button>
+
+      {/* Markdown Guide Modal */}
+      <MarkdownGuide
+        isOpen={isGuideOpen}
+        onClose={() => setIsGuideOpen(false)}
+      />
+    </div>
   );
 };
