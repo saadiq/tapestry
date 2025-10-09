@@ -362,14 +362,15 @@ describe('markdown utils', () => {
         const markdown = '***bold and italic***';
         const json = markdownToJSON(markdown);
 
-        // markdown-it may parse this differently - let's just check that we get bold OR italic
-        // In practice, ***text*** is often parsed as strong>em or em>strong
+        // markdown-it parses ***text*** as strong>em or em>strong (nested)
+        // Our parser should recursively handle this and apply both marks
         const textNode = json.content![0].content![0];
         expect(textNode.marks).toBeDefined();
-        expect(textNode.marks!.length).toBeGreaterThanOrEqual(1);
+        expect(textNode.marks!.length).toBe(2);
         const markTypes = textNode.marks!.map((m) => m.type);
-        // Should have at least one of bold or italic
-        expect(markTypes.some(t => t === 'bold' || t === 'italic')).toBe(true);
+        // Should have BOTH bold and italic marks
+        expect(markTypes).toContain('bold');
+        expect(markTypes).toContain('italic');
       });
     });
 

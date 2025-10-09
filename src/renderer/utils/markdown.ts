@@ -1134,72 +1134,102 @@ function parseInlineContent(token: Token): JSONContent[] {
       }
 
       case 'strong_open': {
-        // Find matching strong_close and collect content between
-        const strongContent: JSONContent[] = [];
+        // Find matching strong_close and recursively process content between
         let i = childIndex + 1;
+        const nestedTokens: Token[] = [];
+
+        // Collect all tokens between strong_open and strong_close
         while (i < token.children.length && token.children[i].type !== 'strong_close') {
-          // Skip empty text nodes - TipTap doesn't allow them
-          if (token.children[i].type === 'text' && token.children[i].content) {
-            strongContent.push({
-              type: 'text',
-              text: token.children[i].content,
-              marks: [{ type: 'bold' }],
-            });
-          }
+          nestedTokens.push(token.children[i]);
           i++;
         }
+
+        // Recursively process nested content (handles nested marks like em_open)
+        const processedContent = parseInlineContent({
+          ...token,
+          children: nestedTokens,
+        } as Token);
+
+        // Add bold mark to all text nodes in the processed content
+        processedContent.forEach(node => {
+          if (node.type === 'text') {
+            node.marks = [...(node.marks || []), { type: 'bold' }];
+          }
+        });
+
         // Only add if we have content
-        if (strongContent.length > 0) {
-          content.push(...strongContent);
+        if (processedContent.length > 0) {
+          content.push(...processedContent);
         }
+
         // Skip past the tokens we just processed
         childIndex = i; // Will be incremented at end of loop
         break;
       }
 
       case 'em_open': {
-        // Find matching em_close and collect content between
-        const emContent: JSONContent[] = [];
+        // Find matching em_close and recursively process content between
         let i = childIndex + 1;
+        const nestedTokens: Token[] = [];
+
+        // Collect all tokens between em_open and em_close
         while (i < token.children.length && token.children[i].type !== 'em_close') {
-          // Skip empty text nodes - TipTap doesn't allow them
-          if (token.children[i].type === 'text' && token.children[i].content) {
-            emContent.push({
-              type: 'text',
-              text: token.children[i].content,
-              marks: [{ type: 'italic' }],
-            });
-          }
+          nestedTokens.push(token.children[i]);
           i++;
         }
+
+        // Recursively process nested content (handles nested marks like strong_open)
+        const processedContent = parseInlineContent({
+          ...token,
+          children: nestedTokens,
+        } as Token);
+
+        // Add italic mark to all text nodes in the processed content
+        processedContent.forEach(node => {
+          if (node.type === 'text') {
+            node.marks = [...(node.marks || []), { type: 'italic' }];
+          }
+        });
+
         // Only add if we have content
-        if (emContent.length > 0) {
-          content.push(...emContent);
+        if (processedContent.length > 0) {
+          content.push(...processedContent);
         }
+
         // Skip past the tokens we just processed
         childIndex = i;
         break;
       }
 
       case 's_open': {
-        // Strikethrough
-        const strikeContent: JSONContent[] = [];
+        // Find matching s_close and recursively process content between
         let i = childIndex + 1;
+        const nestedTokens: Token[] = [];
+
+        // Collect all tokens between s_open and s_close
         while (i < token.children.length && token.children[i].type !== 's_close') {
-          // Skip empty text nodes - TipTap doesn't allow them
-          if (token.children[i].type === 'text' && token.children[i].content) {
-            strikeContent.push({
-              type: 'text',
-              text: token.children[i].content,
-              marks: [{ type: 'strike' }],
-            });
-          }
+          nestedTokens.push(token.children[i]);
           i++;
         }
+
+        // Recursively process nested content (handles nested marks)
+        const processedContent = parseInlineContent({
+          ...token,
+          children: nestedTokens,
+        } as Token);
+
+        // Add strike mark to all text nodes in the processed content
+        processedContent.forEach(node => {
+          if (node.type === 'text') {
+            node.marks = [...(node.marks || []), { type: 'strike' }];
+          }
+        });
+
         // Only add if we have content
-        if (strikeContent.length > 0) {
-          content.push(...strikeContent);
+        if (processedContent.length > 0) {
+          content.push(...processedContent);
         }
+
         // Skip past the tokens we just processed
         childIndex = i;
         break;
