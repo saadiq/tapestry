@@ -28,6 +28,8 @@ export const EditorToolbar = ({
     return null;
   }
 
+  const isMarkdownMode = viewMode === 'markdown';
+
   const ToolbarButton = ({
     onClick,
     active = false,
@@ -59,14 +61,14 @@ export const EditorToolbar = ({
         <div className="join">
           <ToolbarButton
             onClick={() => editor.chain().focus().undo().run()}
-            disabled={!editor.can().undo()}
+            disabled={isMarkdownMode || !editor.can().undo()}
             title="Undo (Cmd+Z)"
           >
             <Undo className="h-4 w-4" />
           </ToolbarButton>
           <ToolbarButton
             onClick={() => editor.chain().focus().redo().run()}
-            disabled={!editor.can().redo()}
+            disabled={isMarkdownMode || !editor.can().redo()}
             title="Redo (Cmd+Shift+Z)"
           >
             <Redo className="h-4 w-4" />
@@ -80,6 +82,7 @@ export const EditorToolbar = ({
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBold().run()}
             active={editor.isActive('bold')}
+            disabled={isMarkdownMode}
             title="Bold (Cmd+B)"
           >
             <Bold className="h-4 w-4" />
@@ -87,6 +90,7 @@ export const EditorToolbar = ({
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleItalic().run()}
             active={editor.isActive('italic')}
+            disabled={isMarkdownMode}
             title="Italic (Cmd+I)"
           >
             <Italic className="h-4 w-4" />
@@ -100,6 +104,7 @@ export const EditorToolbar = ({
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
             active={editor.isActive('heading', { level: 1 })}
+            disabled={isMarkdownMode}
             title="Heading 1"
           >
             <Heading1 className="h-4 w-4" />
@@ -107,6 +112,7 @@ export const EditorToolbar = ({
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
             active={editor.isActive('heading', { level: 2 })}
+            disabled={isMarkdownMode}
             title="Heading 2"
           >
             <Heading2 className="h-4 w-4" />
@@ -114,6 +120,7 @@ export const EditorToolbar = ({
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
             active={editor.isActive('heading', { level: 3 })}
+            disabled={isMarkdownMode}
             title="Heading 3"
           >
             <Heading3 className="h-4 w-4" />
@@ -127,6 +134,7 @@ export const EditorToolbar = ({
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBulletList().run()}
             active={editor.isActive('bulletList')}
+            disabled={isMarkdownMode}
             title="Bullet List"
           >
             <List className="h-4 w-4" />
@@ -134,6 +142,7 @@ export const EditorToolbar = ({
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleOrderedList().run()}
             active={editor.isActive('orderedList')}
+            disabled={isMarkdownMode}
             title="Ordered List"
           >
             <ListOrdered className="h-4 w-4" />
