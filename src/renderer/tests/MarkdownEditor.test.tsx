@@ -216,4 +216,47 @@ describe('MarkdownEditor', () => {
       expect(textarea).toHaveValue(specialContent);
     });
   });
+
+  describe('Markdown Guide', () => {
+    it('should display markdown guide link', () => {
+      render(<MarkdownEditor content="" onUpdate={onUpdateMock} />);
+
+      expect(screen.getByText('Markdown Guide')).toBeInTheDocument();
+    });
+
+    it('should open markdown guide when link is clicked', () => {
+      render(<MarkdownEditor content="" onUpdate={onUpdateMock} />);
+
+      const guideLink = screen.getByText('Markdown Guide');
+      fireEvent.click(guideLink);
+
+      // Guide modal should now be visible
+      expect(screen.getByText('Markdown Syntax Guide')).toBeInTheDocument();
+    });
+
+    it('should close markdown guide when modal close is clicked', () => {
+      render(<MarkdownEditor content="" onUpdate={onUpdateMock} />);
+
+      // Open guide
+      const guideLink = screen.getByText('Markdown Guide');
+      fireEvent.click(guideLink);
+
+      // Close guide
+      const closeButton = screen.getByLabelText('Close');
+      fireEvent.click(closeButton);
+
+      // Guide should be closed
+      expect(screen.queryByText('Markdown Syntax Guide')).not.toBeInTheDocument();
+    });
+
+    it('should render textarea and guide link in same container', () => {
+      const { container } = render(
+        <MarkdownEditor content="Test" onUpdate={onUpdateMock} />
+      );
+
+      const wrapper = container.querySelector('.relative');
+      expect(wrapper).toBeInTheDocument();
+      expect(wrapper).toHaveClass('w-full', 'h-full');
+    });
+  });
 });

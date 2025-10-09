@@ -362,14 +362,15 @@ describe('markdown utils', () => {
         const markdown = '***bold and italic***';
         const json = markdownToJSON(markdown);
 
-        // markdown-it may parse this differently - let's just check that we get bold OR italic
-        // In practice, ***text*** is often parsed as strong>em or em>strong
+        // markdown-it parses ***text*** as strong>em or em>strong (nested)
+        // Our parser should recursively handle this and apply both marks
         const textNode = json.content![0].content![0];
         expect(textNode.marks).toBeDefined();
-        expect(textNode.marks!.length).toBeGreaterThanOrEqual(1);
+        expect(textNode.marks!.length).toBe(2);
         const markTypes = textNode.marks!.map((m) => m.type);
-        // Should have at least one of bold or italic
-        expect(markTypes.some(t => t === 'bold' || t === 'italic')).toBe(true);
+        // Should have BOTH bold and italic marks
+        expect(markTypes).toContain('bold');
+        expect(markTypes).toContain('italic');
       });
     });
 
@@ -751,17 +752,18 @@ describe('markdown utils', () => {
         consoleSpy.mockRestore();
       });
 
-      it('should preserve plain text from cells (formatting is stripped)', () => {
+      it('should preserve formatting in table cells', () => {
         const turndown = createTurndownService();
-        // Note: This test documents the limitation - nested formatting is lost
+        // Nested formatting is now preserved by converting HTML to markdown
         const html = `<table><tr><th><p><strong>Bold</strong> <em>Italic</em> <code>Code</code></p></th></tr></table>`;
         const markdown = turndown.turndown(html);
 
-        // textContent extraction strips HTML tags
-        expect(markdown).toContain('| Bold Italic Code |');
-        expect(markdown).not.toContain('**Bold**');
-        expect(markdown).not.toContain('*Italic*');
-        expect(markdown).not.toContain('`Code`');
+        // Formatting is preserved as markdown syntax
+        expect(markdown).toContain('**Bold**');
+        expect(markdown).toContain('_Italic_');
+        expect(markdown).toContain('`Code`');
+        // Should NOT contain plain text without formatting
+        expect(markdown).not.toContain('| Bold Italic Code |');
       });
 
       it('should round-trip simple tables correctly', () => {
@@ -1081,7 +1083,7 @@ describe('markdown utils', () => {
     });
 
     describe('text extraction', () => {
-      it('should strip nested HTML formatting (known limitation)', () => {
+      it('should preserve nested HTML formatting', () => {
         const html = `<table>
           <tr>
             <th><p><strong>Bold</strong> <em>Italic</em> <code>Code</code></p></th>
@@ -1091,11 +1093,113 @@ describe('markdown utils', () => {
         const table = createTableElement(html);
         const result = convertTipTapTableToMarkdown(table);
 
-        // textContent extraction strips formatting
-        expect(result.markdown).toContain('| Bold Italic Code |');
-        expect(result.markdown).not.toContain('**Bold**');
-        expect(result.markdown).not.toContain('*Italic*');
-        expect(result.markdown).not.toContain('`Code`');
+        // Formatting is preserved by converting HTML to markdown
+        expect(result.markdown).toContain('**Bold**');
+        expect(result.markdown).toContain('_Italic_');
+        expect(result.markdown).toContain('`Code`');
+        // Should NOT contain plain text without formatting
+        expect(result.markdown).not.toContain('| Bold Italic Code |');
+      });
+
+      it('should preserve bold formatting in cells', () => {
+        const html = `<table>
+          <tr>
+            <th><p><strong>Bold Header</strong></p></th>
+          </tr>
+          <tr>
+            <td><p><b>Bold Cell</b></p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.markdown).toContain('**Bold Header**');
+        expect(result.markdown).toContain('**Bold Cell**');
+      });
+
+      it('should preserve italic formatting in cells', () => {
+        const html = `<table>
+          <tr>
+            <td><p><em>Italic</em> and <i>also italic</i></p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.markdown).toContain('_Italic_');
+        expect(result.markdown).toContain('_also italic_');
+      });
+
+      it('should preserve code formatting in cells', () => {
+        const html = `<table>
+          <tr>
+            <td><p>Use <code>const x = 1;</code> here</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.markdown).toContain('`const x = 1;`');
+      });
+
+      it('should preserve links in cells', () => {
+        const html = `<table>
+          <tr>
+            <td><p>Visit <a href="https://example.com">Example</a> now</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.markdown).toContain('[Example](https://example.com)');
+      });
+
+      it('should preserve strikethrough in cells', () => {
+        const html = `<table>
+          <tr>
+            <td><p><del>Strikethrough</del> text</p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        // GFM uses single ~ for del tags (it uses ~~ for <s> or <strike> but we use del in TipTap)
+        expect(result.markdown).toContain('~Strikethrough~');
+      });
+
+      it('should preserve combined formatting (bold + italic)', () => {
+        const html = `<table>
+          <tr>
+            <td><p><strong><em>Bold and Italic</em></strong></p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        // TurndownService may output this as ***text*** or **_text_**
+        expect(result.markdown).toMatch(/\*\*\*Bold and Italic\*\*\*|\*\*_Bold and Italic_\*\*/);
+      });
+
+      it('should preserve mixed formatting in same cell', () => {
+        const html = `<table>
+          <tr>
+            <td><p><strong>Bold</strong> <em>Italic</em> <code>Code</code> <a href="https://example.com">Link</a></p></td>
+          </tr>
+        </table>`;
+
+        const table = createTableElement(html);
+        const result = convertTipTapTableToMarkdown(table);
+
+        expect(result.markdown).toContain('**Bold**');
+        expect(result.markdown).toContain('_Italic_');
+        expect(result.markdown).toContain('`Code`');
+        expect(result.markdown).toContain('[Link](https://example.com)');
       });
 
       it('should handle cells without p tags', () => {

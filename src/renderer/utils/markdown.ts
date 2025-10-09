@@ -54,11 +54,38 @@ export const resetTableWarnings = (): void => {
 };
 
 /**
+ * Convert HTML content to markdown using TurndownService
+ * Helper function for table cell conversion
+ */
+const convertCellHTMLToMarkdown = (html: string): string => {
+  // Create a minimal turndown service for cell content
+  // We don't use the full createTurndownService here to avoid circular dependencies
+  const turndown = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+  });
+
+  // Add GFM plugin for strikethrough support
+  turndown.use(gfm);
+
+  // Convert and clean up the markdown
+  let markdown = turndown.turndown(html).trim();
+
+  // Remove surrounding paragraph tags that TurndownService might add
+  // Table cells should have inline content only
+  if (markdown.startsWith('\n') || markdown.endsWith('\n')) {
+    markdown = markdown.trim();
+  }
+
+  return markdown;
+};
+
+/**
  * Convert a TipTap table HTML element to GFM markdown
  *
  * This function handles TipTap's table structure where cell content is wrapped in <p> tags.
- * It extracts text content from cells, detects complex features (colspan/rowspan), and
- * generates GFM-compliant markdown table syntax.
+ * It parses cell innerHTML to preserve formatting (bold, italic, links, code, strikethrough),
+ * detects complex features (colspan/rowspan), and generates GFM-compliant markdown table syntax.
  *
  * @param element - The HTML table element to convert
  * @returns Object containing markdown string, complexity flags, and warnings
@@ -73,21 +100,25 @@ export const resetTableWarnings = (): void => {
  * }
  * ```
  *
+ * Features:
+ * - Preserves nested formatting (bold, italic, links, code, strikethrough)
+ * - Converts HTML marks to markdown syntax
+ * - Detects and warns about unsupported features (colspan/rowspan)
+ * - Handles multiple paragraphs in cells
+ *
  * Limitations:
- * - Uses textContent extraction, which strips nested formatting (bold, italic, links, code)
  * - Merged cells (colspan/rowspan) are not supported in GFM and will be flattened
  * - Multiple paragraphs in a cell are joined with spaces
  */
 export const convertTipTapTableToMarkdown = (element: HTMLTableElement): TableConversionResult => {
   const rows: string[][] = [];
-  let hasHeader = false;
   let hasComplexCells = false;
   const warnings: string[] = [];
 
   // Process each row
   const tableRows = Array.from(element.querySelectorAll('tr'));
 
-  tableRows.forEach((row, rowIndex) => {
+  tableRows.forEach((row) => {
     const cells: string[] = [];
     const cellElements = Array.from(row.querySelectorAll('th, td'));
 
@@ -99,20 +130,23 @@ export const convertTipTapTableToMarkdown = (element: HTMLTableElement): TableCo
         hasComplexCells = true;
       }
 
-      // Extract text from paragraph tags or direct text content
+      // Extract and convert content from paragraph tags or direct HTML content
       const paragraphs = cell.querySelectorAll('p');
-      let cellText = '';
-      if (paragraphs.length > 0) {
-        cellText = Array.from(paragraphs).map(p => p.textContent || '').join(' ');
-      } else {
-        cellText = cell.textContent || '';
-      }
-      cells.push(cellText.trim());
-    });
+      let cellMarkdown = '';
 
-    if (cellElements.length > 0 && cellElements[0].tagName === 'TH') {
-      hasHeader = true;
-    }
+      if (paragraphs.length > 0) {
+        // Convert each paragraph's HTML to markdown and join with spaces
+        cellMarkdown = Array.from(paragraphs)
+          .map(p => convertCellHTMLToMarkdown(p.innerHTML))
+          .filter(text => text.length > 0) // Remove empty paragraphs
+          .join(' '); // Join multiple paragraphs with space
+      } else {
+        // No paragraph tags - convert cell's innerHTML directly
+        cellMarkdown = convertCellHTMLToMarkdown(cell.innerHTML);
+      }
+
+      cells.push(cellMarkdown.trim());
+    });
 
     if (cells.length > 0) {
       rows.push(cells);
@@ -177,15 +211,18 @@ export const createTurndownService = (): TurndownService => {
    * Custom TurndownService rule for TipTap tables
    *
    * TipTap wraps table cell content in <p> tags, which the default GFM plugin
-   * doesn't handle correctly. This rule extracts text from paragraph tags within
-   * cells and converts them to proper GFM markdown table syntax.
+   * doesn't handle correctly. This rule converts cell HTML (including nested formatting)
+   * to proper GFM markdown table syntax while preserving marks like bold, italic, links, and code.
    *
    * IMPORTANT: This rule must be added AFTER the GFM plugin to override the
    * default table handling. If the GFM plugin is added after this rule, tables
    * will not convert correctly.
    *
+   * Features:
+   * - Preserves nested formatting (bold, italic, links, code, strikethrough)
+   * - Converts HTML marks to markdown syntax within table cells
+   *
    * Limitations:
-   * - Uses textContent extraction, which strips nested formatting (bold, italic, links, code)
    * - Merged cells (colspan/rowspan) are not supported in GFM and will be flattened
    * - Multiple paragraphs in a cell are joined with spaces
    */
@@ -1095,6 +1132,56 @@ function processInlineTokens(tokens: Token[]): JSONContent[] {
 }
 
 /**
+ * Helper function to process open/close mark tokens (bold, italic, strike)
+ * Reduces code duplication in parseInlineContent
+ *
+ * @param token - The parent token containing children
+ * @param childIndex - Current position in children array
+ * @param openType - The opening token type (e.g., 'strong_open')
+ * @param closeType - The closing token type (e.g., 'strong_close')
+ * @param markType - The TipTap mark type to apply (e.g., 'bold')
+ * @returns Object with processed content and next index
+ */
+function processMarkTokens(
+  token: Token,
+  childIndex: number,
+  openType: string,
+  closeType: string,
+  markType: MarkType
+): { content: JSONContent[]; nextIndex: number } {
+  if (!token.children) {
+    return { content: [], nextIndex: childIndex };
+  }
+
+  let i = childIndex + 1;
+  const nestedTokens: Token[] = [];
+
+  // Collect all tokens between open and close tags
+  while (i < token.children.length && token.children[i].type !== closeType) {
+    nestedTokens.push(token.children[i]);
+    i++;
+  }
+
+  // Recursively process nested content (handles nested marks)
+  const processedContent = parseInlineContent({
+    ...token,
+    children: nestedTokens,
+  } as Token);
+
+  // Add mark to all text nodes in the processed content
+  processedContent.forEach(node => {
+    if (node.type === 'text') {
+      node.marks = [...(node.marks || []), { type: markType }];
+    }
+  });
+
+  return {
+    content: processedContent,
+    nextIndex: i,
+  };
+}
+
+/**
  * Parse inline content (text with marks like bold, italic, code, links)
  */
 function parseInlineContent(token: Token): JSONContent[] {
@@ -1134,74 +1221,29 @@ function parseInlineContent(token: Token): JSONContent[] {
       }
 
       case 'strong_open': {
-        // Find matching strong_close and collect content between
-        const strongContent: JSONContent[] = [];
-        let i = childIndex + 1;
-        while (i < token.children.length && token.children[i].type !== 'strong_close') {
-          // Skip empty text nodes - TipTap doesn't allow them
-          if (token.children[i].type === 'text' && token.children[i].content) {
-            strongContent.push({
-              type: 'text',
-              text: token.children[i].content,
-              marks: [{ type: 'bold' }],
-            });
-          }
-          i++;
+        const result = processMarkTokens(token, childIndex, 'strong_open', 'strong_close', 'bold');
+        if (result.content.length > 0) {
+          content.push(...result.content);
         }
-        // Only add if we have content
-        if (strongContent.length > 0) {
-          content.push(...strongContent);
-        }
-        // Skip past the tokens we just processed
-        childIndex = i; // Will be incremented at end of loop
+        childIndex = result.nextIndex; // Will be incremented at end of loop
         break;
       }
 
       case 'em_open': {
-        // Find matching em_close and collect content between
-        const emContent: JSONContent[] = [];
-        let i = childIndex + 1;
-        while (i < token.children.length && token.children[i].type !== 'em_close') {
-          // Skip empty text nodes - TipTap doesn't allow them
-          if (token.children[i].type === 'text' && token.children[i].content) {
-            emContent.push({
-              type: 'text',
-              text: token.children[i].content,
-              marks: [{ type: 'italic' }],
-            });
-          }
-          i++;
+        const result = processMarkTokens(token, childIndex, 'em_open', 'em_close', 'italic');
+        if (result.content.length > 0) {
+          content.push(...result.content);
         }
-        // Only add if we have content
-        if (emContent.length > 0) {
-          content.push(...emContent);
-        }
-        // Skip past the tokens we just processed
-        childIndex = i;
+        childIndex = result.nextIndex;
         break;
       }
 
       case 's_open': {
-        // Strikethrough
-        const strikeContent: JSONContent[] = [];
-        let i = childIndex + 1;
-        while (i < token.children.length && token.children[i].type !== 's_close') {
-          // Skip empty text nodes - TipTap doesn't allow them
-          if (token.children[i].type === 'text' && token.children[i].content) {
-            strikeContent.push({
-              type: 'text',
-              text: token.children[i].content,
-              marks: [{ type: 'strike' }],
-            });
-          }
-          i++;
+        const result = processMarkTokens(token, childIndex, 's_open', 's_close', 'strike');
+        if (result.content.length > 0) {
+          content.push(...result.content);
         }
-        // Only add if we have content
-        if (strikeContent.length > 0) {
-          content.push(...strikeContent);
-        }
-        // Skip past the tokens we just processed
-        childIndex = i;
+        childIndex = result.nextIndex;
         break;
       }
 

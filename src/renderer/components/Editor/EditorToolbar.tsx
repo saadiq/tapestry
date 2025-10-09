@@ -2,32 +2,25 @@ import { Editor } from '@tiptap/react';
 import {
   Bold,
   Italic,
-  Strikethrough,
-  Code,
   List,
   ListOrdered,
-  Quote,
   Heading1,
   Heading2,
   Heading3,
-  Link as LinkIcon,
-  Image as ImageIcon,
   Undo,
   Redo,
-  Code2,
+  Hash,
 } from 'lucide-react';
 import type { ViewMode } from '@shared/types/editor';
 
 interface EditorToolbarProps {
   editor: Editor | null;
-  onOpenLinkPopover: () => void;
   viewMode?: ViewMode;
   onToggleViewMode?: () => void;
 }
 
 export const EditorToolbar = ({
   editor,
-  onOpenLinkPopover,
   viewMode = 'wysiwyg',
   onToggleViewMode,
 }: EditorToolbarProps) => {
@@ -35,12 +28,7 @@ export const EditorToolbar = ({
     return null;
   }
 
-  const addImage = () => {
-    const url = window.prompt('Enter image URL:');
-    if (url) {
-      editor.chain().focus().setImage({ src: url }).run();
-    }
-  };
+  const isMarkdownMode = viewMode === 'markdown';
 
   const ToolbarButton = ({
     onClick,
@@ -73,14 +61,14 @@ export const EditorToolbar = ({
         <div className="join">
           <ToolbarButton
             onClick={() => editor.chain().focus().undo().run()}
-            disabled={!editor.can().undo()}
+            disabled={isMarkdownMode || !editor.can().undo()}
             title="Undo (Cmd+Z)"
           >
             <Undo className="h-4 w-4" />
           </ToolbarButton>
           <ToolbarButton
             onClick={() => editor.chain().focus().redo().run()}
-            disabled={!editor.can().redo()}
+            disabled={isMarkdownMode || !editor.can().redo()}
             title="Redo (Cmd+Shift+Z)"
           >
             <Redo className="h-4 w-4" />
@@ -94,6 +82,7 @@ export const EditorToolbar = ({
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBold().run()}
             active={editor.isActive('bold')}
+            disabled={isMarkdownMode}
             title="Bold (Cmd+B)"
           >
             <Bold className="h-4 w-4" />
@@ -101,23 +90,10 @@ export const EditorToolbar = ({
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleItalic().run()}
             active={editor.isActive('italic')}
+            disabled={isMarkdownMode}
             title="Italic (Cmd+I)"
           >
             <Italic className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleStrike().run()}
-            active={editor.isActive('strike')}
-            title="Strikethrough"
-          >
-            <Strikethrough className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleCode().run()}
-            active={editor.isActive('code')}
-            title="Inline Code (Cmd+E)"
-          >
-            <Code className="h-4 w-4" />
           </ToolbarButton>
         </div>
 
@@ -128,6 +104,7 @@ export const EditorToolbar = ({
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
             active={editor.isActive('heading', { level: 1 })}
+            disabled={isMarkdownMode}
             title="Heading 1"
           >
             <Heading1 className="h-4 w-4" />
@@ -135,6 +112,7 @@ export const EditorToolbar = ({
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
             active={editor.isActive('heading', { level: 2 })}
+            disabled={isMarkdownMode}
             title="Heading 2"
           >
             <Heading2 className="h-4 w-4" />
@@ -142,6 +120,7 @@ export const EditorToolbar = ({
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
             active={editor.isActive('heading', { level: 3 })}
+            disabled={isMarkdownMode}
             title="Heading 3"
           >
             <Heading3 className="h-4 w-4" />
@@ -155,6 +134,7 @@ export const EditorToolbar = ({
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBulletList().run()}
             active={editor.isActive('bulletList')}
+            disabled={isMarkdownMode}
             title="Bullet List"
           >
             <List className="h-4 w-4" />
@@ -162,47 +142,13 @@ export const EditorToolbar = ({
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleOrderedList().run()}
             active={editor.isActive('orderedList')}
+            disabled={isMarkdownMode}
             title="Ordered List"
           >
             <ListOrdered className="h-4 w-4" />
           </ToolbarButton>
         </div>
 
-        <div className="divider divider-horizontal mx-0"></div>
-
-        {/* Block Elements */}
-        <div className="join">
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleBlockquote().run()}
-            active={editor.isActive('blockquote')}
-            title="Blockquote"
-          >
-            <Quote className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-            active={editor.isActive('codeBlock')}
-            title="Code Block"
-          >
-            <Code className="h-4 w-4" />
-          </ToolbarButton>
-        </div>
-
-        <div className="divider divider-horizontal mx-0"></div>
-
-        {/* Links & Images */}
-        <div className="join">
-          <ToolbarButton
-            onClick={onOpenLinkPopover}
-            active={editor.isActive('link')}
-            title="Add Link (Cmd+K)"
-          >
-            <LinkIcon className="h-4 w-4" />
-          </ToolbarButton>
-          <ToolbarButton onClick={addImage} title="Add Image">
-            <ImageIcon className="h-4 w-4" />
-          </ToolbarButton>
-        </div>
         </div>
 
         {/* View Mode Toggle */}
@@ -212,7 +158,7 @@ export const EditorToolbar = ({
             active={viewMode === 'markdown'}
             title={viewMode === 'wysiwyg' ? 'Switch to Markdown' : 'Switch to WYSIWYG'}
           >
-            <Code2 className="h-4 w-4" />
+            <Hash className="h-4 w-4" />
           </ToolbarButton>
         )}
       </div>
