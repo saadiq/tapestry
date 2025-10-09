@@ -173,7 +173,7 @@ export const MarkdownGuide = ({ isOpen, onClose }: MarkdownGuideProps) => {
               </div>
 
               <div>
-                <code className="text-sm break-all">[Link](https://example.com "Title")</code>
+                <code className="text-sm break-all">[Link](https://example.com &quot;Title&quot;)</code>
               </div>
               <div>
                 <p className="text-sm"><a href="#" className="link" title="Title">Link with title</a></p>
