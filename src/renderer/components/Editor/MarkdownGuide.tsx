@@ -78,42 +78,42 @@ export const MarkdownGuide = ({ isOpen, onClose }: MarkdownGuideProps) => {
               </div>
               <div>
                 <p className="text-sm text-base-content/70 mb-1">Result</p>
-                <p className="text-sm font-bold text-2xl">Heading 1</p>
+                <p className="font-bold text-2xl">Heading 1</p>
               </div>
 
               <div>
                 <code className="text-sm">## Heading 2</code>
               </div>
               <div>
-                <p className="text-sm font-bold text-xl">Heading 2</p>
+                <p className="font-bold text-xl">Heading 2</p>
               </div>
 
               <div>
                 <code className="text-sm">### Heading 3</code>
               </div>
               <div>
-                <p className="text-sm font-bold text-lg">Heading 3</p>
+                <p className="font-bold text-lg">Heading 3</p>
               </div>
 
               <div>
                 <code className="text-sm">#### Heading 4</code>
               </div>
               <div>
-                <p className="text-sm font-bold text-base">Heading 4</p>
+                <p className="font-bold text-base">Heading 4</p>
               </div>
 
               <div>
                 <code className="text-sm">##### Heading 5</code>
               </div>
               <div>
-                <p className="text-sm font-bold text-sm">Heading 5</p>
+                <p className="font-bold text-sm">Heading 5</p>
               </div>
 
               <div>
                 <code className="text-sm">###### Heading 6</code>
               </div>
               <div>
-                <p className="text-sm font-bold text-xs">Heading 6</p>
+                <p className="font-bold text-xs">Heading 6</p>
               </div>
             </div>
           </section>
