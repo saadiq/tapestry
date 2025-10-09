@@ -160,7 +160,7 @@ TipTap extensions used:
 
 **Markdown ↔ TipTap Conversion:**
 - **Markdown → TipTap**: Uses `markdownToJSON()` which parses markdown-it tokens directly to TipTap JSON format, bypassing HTML/DOM parsing entirely. This prevents browser DOM parser from injecting tbody/thead elements that TipTap's schema rejects, enabling proper table support.
-- **TipTap → Markdown**: Uses TurndownService with GFM plugin to convert HTML back to markdown.
+- **TipTap → Markdown**: Uses TurndownService with GFM plugin to convert HTML back to markdown. Table cell formatting (bold, italic, links, code, strikethrough) is preserved by converting cell HTML to markdown syntax.
 - **URL Security**: All links and images are sanitized through `urlSanitizer.ts` to prevent XSS attacks. Only `http:`, `https:`, and `mailto:` protocols are allowed for links, and `data:` URIs are allowed for images (image/* only).
 
 Editor state is managed via `useEditor` hook (wraps TipTap's `useTipTapEditor`) and content flows through `useFileContent` for persistence. View mode preference is persisted to localStorage.
@@ -284,7 +284,7 @@ Horizontal rule
 - Complex table features (cell merging, alignment) may not round-trip perfectly
 - Very large tables (>50 rows) may impact performance
 - Tables are best edited in WYSIWYG mode for complex structures
-- **Formatting Preservation**: Nested formatting (bold, italic, links, code) within table cells is NOT preserved when converting from WYSIWYG to markdown mode. The TurndownService uses `textContent` extraction which strips HTML tags, converting formatted text to plain text. This is a known limitation. Workaround: Keep tables in WYSIWYG mode for rich formatting, or manually re-apply formatting after switching modes.
+- **Formatting Preservation**: Nested formatting (bold, italic, links, code, strikethrough) within table cells IS preserved when converting from WYSIWYG to markdown mode. The conversion process parses cell HTML and converts formatting to markdown syntax (e.g., `<strong>text</strong>` → `**text**`).
 
 **Performance Considerations:**
 - Documents >1000 lines: Expect slight lag in markdown mode switching

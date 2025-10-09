@@ -54,11 +54,38 @@ export const resetTableWarnings = (): void => {
 };
 
 /**
+ * Convert HTML content to markdown using TurndownService
+ * Helper function for table cell conversion
+ */
+const convertCellHTMLToMarkdown = (html: string): string => {
+  // Create a minimal turndown service for cell content
+  // We don't use the full createTurndownService here to avoid circular dependencies
+  const turndown = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+  });
+
+  // Add GFM plugin for strikethrough support
+  turndown.use(gfm);
+
+  // Convert and clean up the markdown
+  let markdown = turndown.turndown(html).trim();
+
+  // Remove surrounding paragraph tags that TurndownService might add
+  // Table cells should have inline content only
+  if (markdown.startsWith('\n') || markdown.endsWith('\n')) {
+    markdown = markdown.trim();
+  }
+
+  return markdown;
+};
+
+/**
  * Convert a TipTap table HTML element to GFM markdown
  *
  * This function handles TipTap's table structure where cell content is wrapped in <p> tags.
- * It extracts text content from cells, detects complex features (colspan/rowspan), and
- * generates GFM-compliant markdown table syntax.
+ * It parses cell innerHTML to preserve formatting (bold, italic, links, code, strikethrough),
+ * detects complex features (colspan/rowspan), and generates GFM-compliant markdown table syntax.
  *
  * @param element - The HTML table element to convert
  * @returns Object containing markdown string, complexity flags, and warnings
@@ -73,21 +100,25 @@ export const resetTableWarnings = (): void => {
  * }
  * ```
  *
+ * Features:
+ * - Preserves nested formatting (bold, italic, links, code, strikethrough)
+ * - Converts HTML marks to markdown syntax
+ * - Detects and warns about unsupported features (colspan/rowspan)
+ * - Handles multiple paragraphs in cells
+ *
  * Limitations:
- * - Uses textContent extraction, which strips nested formatting (bold, italic, links, code)
  * - Merged cells (colspan/rowspan) are not supported in GFM and will be flattened
  * - Multiple paragraphs in a cell are joined with spaces
  */
 export const convertTipTapTableToMarkdown = (element: HTMLTableElement): TableConversionResult => {
   const rows: string[][] = [];
-  let hasHeader = false;
   let hasComplexCells = false;
   const warnings: string[] = [];
 
   // Process each row
   const tableRows = Array.from(element.querySelectorAll('tr'));
 
-  tableRows.forEach((row, rowIndex) => {
+  tableRows.forEach((row) => {
     const cells: string[] = [];
     const cellElements = Array.from(row.querySelectorAll('th, td'));
 
@@ -99,20 +130,23 @@ export const convertTipTapTableToMarkdown = (element: HTMLTableElement): TableCo
         hasComplexCells = true;
       }
 
-      // Extract text from paragraph tags or direct text content
+      // Extract and convert content from paragraph tags or direct HTML content
       const paragraphs = cell.querySelectorAll('p');
-      let cellText = '';
-      if (paragraphs.length > 0) {
-        cellText = Array.from(paragraphs).map(p => p.textContent || '').join(' ');
-      } else {
-        cellText = cell.textContent || '';
-      }
-      cells.push(cellText.trim());
-    });
+      let cellMarkdown = '';
 
-    if (cellElements.length > 0 && cellElements[0].tagName === 'TH') {
-      hasHeader = true;
-    }
+      if (paragraphs.length > 0) {
+        // Convert each paragraph's HTML to markdown and join with spaces
+        cellMarkdown = Array.from(paragraphs)
+          .map(p => convertCellHTMLToMarkdown(p.innerHTML))
+          .filter(text => text.length > 0) // Remove empty paragraphs
+          .join(' '); // Join multiple paragraphs with space
+      } else {
+        // No paragraph tags - convert cell's innerHTML directly
+        cellMarkdown = convertCellHTMLToMarkdown(cell.innerHTML);
+      }
+
+      cells.push(cellMarkdown.trim());
+    });
 
     if (cells.length > 0) {
       rows.push(cells);
@@ -177,15 +211,18 @@ export const createTurndownService = (): TurndownService => {
    * Custom TurndownService rule for TipTap tables
    *
    * TipTap wraps table cell content in <p> tags, which the default GFM plugin
-   * doesn't handle correctly. This rule extracts text from paragraph tags within
-   * cells and converts them to proper GFM markdown table syntax.
+   * doesn't handle correctly. This rule converts cell HTML (including nested formatting)
+   * to proper GFM markdown table syntax while preserving marks like bold, italic, links, and code.
    *
    * IMPORTANT: This rule must be added AFTER the GFM plugin to override the
    * default table handling. If the GFM plugin is added after this rule, tables
    * will not convert correctly.
    *
+   * Features:
+   * - Preserves nested formatting (bold, italic, links, code, strikethrough)
+   * - Converts HTML marks to markdown syntax within table cells
+   *
    * Limitations:
-   * - Uses textContent extraction, which strips nested formatting (bold, italic, links, code)
    * - Merged cells (colspan/rowspan) are not supported in GFM and will be flattened
    * - Multiple paragraphs in a cell are joined with spaces
    */

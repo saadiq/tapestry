@@ -296,6 +296,20 @@ Plain code block
               <div>
                 <p className="text-sm">Table with alignment (left, center, right)</p>
               </div>
+
+              <div>
+                <pre className="text-sm">
+{`| **Bold** | *Italic* |
+|----------|----------|
+| \`code\` | [link](url) |`}
+                </pre>
+              </div>
+              <div>
+                <p className="text-sm">Tables support formatting in cells</p>
+              </div>
+            </div>
+            <div className="mt-2 p-2 bg-info/10 rounded text-sm">
+              <strong>Note:</strong> Formatting (bold, italic, links, code) inside table cells is preserved when switching between WYSIWYG and markdown modes.
             </div>
           </section>
 
