@@ -40,7 +40,7 @@ describe('MarkdownGuide', () => {
 
     render(<MarkdownGuide isOpen={true} onClose={handleClose} />);
 
-    const closeButton = screen.getByLabelText('Close');
+    const closeButton = screen.getByLabelText('Close markdown guide');
     fireEvent.click(closeButton);
 
     expect(closeCalled).toBe(true);

@@ -1,4 +1,5 @@
 import { X } from 'lucide-react';
+import { useEffect } from 'react';
 
 interface MarkdownGuideProps {
   isOpen: boolean;
@@ -6,18 +7,35 @@ interface MarkdownGuideProps {
 }
 
 export const MarkdownGuide = ({ isOpen, onClose }: MarkdownGuideProps) => {
+  // Add keyboard navigation (Escape key to close)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <dialog className="modal modal-open">
+    <dialog className="modal modal-open" role="dialog" aria-modal="true" aria-labelledby="markdown-guide-title">
       <div className="modal-box max-w-4xl">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold">Markdown Syntax Guide</h2>
+          <h2 id="markdown-guide-title" className="text-2xl font-bold">Markdown Syntax Guide</h2>
           <button
             onClick={onClose}
             className="btn btn-sm btn-circle btn-ghost"
-            aria-label="Close"
+            aria-label="Close markdown guide"
           >
             <X className="h-4 w-4" />
           </button>
